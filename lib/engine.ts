@@ -1,6 +1,7 @@
 import { spawn } from "bun";
-// @ts-ignore - Wasm package is built later
-import { render_frame } from "../core/pkg/ubevid_core.js";
+import { readFile } from "fs/promises";
+// @ts-ignore - Built Wasm package
+import { UbeEngine } from "../core/pkg/ubevid_core.js";
 import type { RenderConfig, SceneNode } from "./types.js";
 
 declare global {
@@ -12,10 +13,29 @@ export async function render(
   config: RenderConfig,
   outputFile: string
 ) {
-  const { width, height, fps, duration } = config;
+  const { width, height, fps, duration, assets } = config;
   const totalFrames = fps * duration;
 
-  console.log(`🎬 Ubevid Engine: Rendering ${totalFrames} frames...`);
+  console.log(`🎬 Ubevid Engine: Initializing Rust Core...`);
+  
+  // 1. Initialize Wasm Engine
+  const engine = UbeEngine.new();
+
+  // 2. Load Assets
+  if (assets) {
+    for (const [id, path] of Object.entries(assets)) {
+      console.log(`   📦 Loading asset: [${id}] -> ${path}`);
+      try {
+        const buffer = await readFile(path);
+        // Pass Uint8Array to Rust
+        engine.load_asset(id, new Uint8Array(buffer));
+      } catch (e) {
+        console.error(`   ❌ Failed to load asset ${id}:`, e);
+      }
+    }
+  }
+
+  console.log(`🎬 Rendering ${totalFrames} frames to ${outputFile}...`);
 
   const ffmpeg = spawn([
     "ffmpeg", "-y", "-f", "rawvideo", "-pix_fmt", "rgba",
@@ -33,12 +53,12 @@ export async function render(
   for (let i = 0; i < totalFrames; i++) {
     globalThis._ubevid_frame = i;
 
-    // TypeScript enforces the return type of the scene function
     const sceneGraph = sceneComponent(); 
     const jsonString = JSON.stringify(sceneGraph);
     
-    // Call Rust
-    const pixelBuffer = render_frame(jsonString, width, height) as Uint8Array;
+    // Call Class Method instead of static function
+    const pixelBuffer = engine.render(jsonString, width, height) as Uint8Array;
+    
     ffmpeg.stdin.write(pixelBuffer);
 
     if (i % 10 === 0) process.stdout.write(`.`);

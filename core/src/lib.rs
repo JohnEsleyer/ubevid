@@ -5,14 +5,12 @@ use taffy::prelude::*;
 use fontdue::{Font, FontSettings};
 use std::collections::HashMap;
 
-// --- Imports for Debugging ---
 #[wasm_bindgen]
 extern "C" {
     #[wasm_bindgen(js_namespace = console)]
     fn log(s: &str);
 }
 
-// Embed default font
 static FONT_DATA: &[u8] = include_bytes!("../../assets/Roboto-Regular.ttf"); 
 
 #[derive(Deserialize, Serialize, Debug)]
@@ -41,6 +39,7 @@ pub struct StyleConfig {
     pub alignItems: Option<String>,
     pub rotate: Option<f32>,
     pub scale: Option<f32>,
+    pub opacity: Option<f32>,
 }
 
 fn parse_color(hex: &str) -> Color {
@@ -86,9 +85,6 @@ impl UbeEngine {
     }
 
     pub fn load_asset(&mut self, id: &str, data: &[u8]) -> Result<(), JsValue> {
-        // Log to JS console to confirm receipt
-        unsafe { log(&format!("Rust: Decoding image '{}' ({} bytes)", id, data.len())); }
-
         let img = image::load_from_memory(data)
             .map_err(|e| JsValue::from_str(&e.to_string()))?;
         
@@ -96,8 +92,6 @@ impl UbeEngine {
         let width = rgba.width();
         let height = rgba.height();
 
-        // --- PREMULTIPLY ALPHA FIX ---
-        // Converts "Transparent White" (255,255,255,0) -> "Transparent Black" (0,0,0,0)
         for p in rgba.chunks_exact_mut(4) {
             let a = p[3] as u16;
             if a != 255 {
@@ -131,42 +125,36 @@ impl UbeEngine {
                 }
             }
 
-            let flex_direction = match node.style.flexDirection.as_deref() {
-                Some("column") => FlexDirection::Column,
-                _ => FlexDirection::Row,
-            };
-            let justify = match node.style.justifyContent.as_deref() {
-                Some("center") => JustifyContent::Center,
-                Some("spaceBetween") => JustifyContent::SpaceBetween,
-                Some("flexEnd") => JustifyContent::FlexEnd,
-                _ => JustifyContent::FlexStart,
-            };
-            let align = match node.style.alignItems.as_deref() {
-                Some("center") => AlignItems::Center,
-                Some("flexEnd") => AlignItems::FlexEnd,
-                _ => AlignItems::FlexStart,
-            };
-            let margin_val = node.style.margin.unwrap_or(0.0);
-            let padding_val = node.style.padding.unwrap_or(0.0);
-
             let style = Style {
                 size: Size { width: w, height: h },
                 margin: Rect {
-                    left: LengthPercentageAuto::Points(margin_val),
-                    right: LengthPercentageAuto::Points(margin_val),
-                    top: LengthPercentageAuto::Points(margin_val),
-                    bottom: LengthPercentageAuto::Points(margin_val),
+                    left: LengthPercentageAuto::Points(node.style.margin.unwrap_or(0.0)),
+                    right: LengthPercentageAuto::Points(node.style.margin.unwrap_or(0.0)),
+                    top: LengthPercentageAuto::Points(node.style.margin.unwrap_or(0.0)),
+                    bottom: LengthPercentageAuto::Points(node.style.margin.unwrap_or(0.0)),
                 },
                 padding: Rect {
-                    left: LengthPercentage::Points(padding_val),
-                    right: LengthPercentage::Points(padding_val),
-                    top: LengthPercentage::Points(padding_val),
-                    bottom: LengthPercentage::Points(padding_val),
+                    left: LengthPercentage::Points(node.style.padding.unwrap_or(0.0)),
+                    right: LengthPercentage::Points(node.style.padding.unwrap_or(0.0)),
+                    top: LengthPercentage::Points(node.style.padding.unwrap_or(0.0)),
+                    bottom: LengthPercentage::Points(node.style.padding.unwrap_or(0.0)),
                 },
                 flex_grow: node.style.flex.unwrap_or(0.0),
-                flex_direction,
-                justify_content: Some(justify),
-                align_items: Some(align),
+                flex_direction: match node.style.flexDirection.as_deref() {
+                    Some("column") => FlexDirection::Column,
+                    _ => FlexDirection::Row,
+                },
+                justify_content: Some(match node.style.justifyContent.as_deref() {
+                    Some("center") => JustifyContent::Center,
+                    Some("spaceBetween") => JustifyContent::SpaceBetween,
+                    Some("flexEnd") => JustifyContent::FlexEnd,
+                    _ => JustifyContent::FlexStart,
+                }),
+                align_items: Some(match node.style.alignItems.as_deref() {
+                    Some("center") => AlignItems::Center,
+                    Some("flexEnd") => AlignItems::FlexEnd,
+                    _ => AlignItems::FlexStart,
+                }),
                 ..Default::default()
             };
 
@@ -197,11 +185,29 @@ impl UbeEngine {
             let layout = taffy.layout(layout_id).unwrap();
             let x = parent_x + layout.location.x;
             let y = parent_y + layout.location.y;
-            let transform = Transform::from_translate(x, y);
+            
+            let mut transform = Transform::from_translate(x, y);
+            
+            if let Some(r) = node.style.rotate {
+                let cx = layout.size.width / 2.0;
+                let cy = layout.size.height / 2.0;
+                transform = transform.pre_translate(cx, cy).pre_rotate(r).pre_translate(-cx, -cy);
+            }
+            
+            if let Some(s) = node.style.scale {
+                let cx = layout.size.width / 2.0;
+                let cy = layout.size.height / 2.0;
+                transform = transform.pre_translate(cx, cy).pre_scale(s, s).pre_translate(-cx, -cy);
+            }
+
+            let opacity = node.style.opacity.unwrap_or(1.0);
 
             if let Some(bg) = &node.style.backgroundColor {
                 let mut paint = Paint::default();
-                paint.set_color(parse_color(bg));
+                let mut color = parse_color(bg);
+                color.set_alpha(color.alpha() * opacity);
+                paint.set_color(color);
+                
                 if let Some(r) = tiny_skia::Rect::from_xywh(0.0, 0.0, layout.size.width, layout.size.height) {
                     pixmap.fill_rect(r, &paint, transform, None);
                 }
@@ -211,23 +217,14 @@ impl UbeEngine {
                 if let Some(src) = &node.src {
                     if let Some(img_pixmap) = engine.assets.get(src) {
                         let mut img_paint = PixmapPaint::default();
+                        img_paint.opacity = opacity;
                         img_paint.quality = tiny_skia::FilterQuality::Bilinear;
                         
-                        // Calculate Scale
                         let sx = layout.size.width / img_pixmap.width() as f32;
                         let sy = layout.size.height / img_pixmap.height() as f32;
-                        
-                        // --- TRANSFORM FIX ---
-                        // Use pre_scale so we scale the image content, NOT the position (translation).
                         let img_transform = transform.pre_scale(sx, sy);
 
-                        pixmap.draw_pixmap(
-                            0, 0, 
-                            img_pixmap.as_ref(), 
-                            &img_paint, 
-                            img_transform, 
-                            None
-                        );
+                        pixmap.draw_pixmap(0, 0, img_pixmap.as_ref(), &img_paint, img_transform, None);
                     }
                 }
             }
@@ -243,15 +240,12 @@ impl UbeEngine {
                         let mut char_pixmap = Pixmap::new(metrics.width as u32, metrics.height as u32).unwrap();
                         for (i, alpha) in bitmap.iter().enumerate() {
                             let pixel_idx = i * 4;
-                            
-                            // Normalize alpha to 0.0 - 1.0
-                            let a_norm = *alpha as f32 / 255.0;
+                            let a_norm = (*alpha as f32 / 255.0) * opacity;
 
-                            // PREMULTIPLY: Multiply the color channels by the alpha mask
                             char_pixmap.data_mut()[pixel_idx]     = (color.red()   * 255.0 * a_norm) as u8;
                             char_pixmap.data_mut()[pixel_idx + 1] = (color.green() * 255.0 * a_norm) as u8;
                             char_pixmap.data_mut()[pixel_idx + 2] = (color.blue()  * 255.0 * a_norm) as u8;
-                            char_pixmap.data_mut()[pixel_idx + 3] = *alpha;
+                            char_pixmap.data_mut()[pixel_idx + 3] = (a_norm * 255.0) as u8;
                         }
                         
                         let char_y = (size as i32 - metrics.height as i32 - metrics.ymin) as f32;

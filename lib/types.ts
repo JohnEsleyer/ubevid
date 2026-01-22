@@ -10,8 +10,10 @@ export interface StyleConfig {
   flexDirection?: "row" | "column";
   justifyContent?: "center" | "spaceBetween" | "flexStart" | "flexEnd";
   alignItems?: "center" | "flexStart" | "flexEnd";
+  opacity?: number;
   rotate?: number;
   scale?: number;
+  
 }
 
 export interface SceneNode {

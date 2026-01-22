@@ -33,6 +33,8 @@ yarn-debug.log*
 yarn-error.log*
 bun-debug.log*
 
+codebase.txt 
+
 # --- OS / Editor ---
 .DS_Store
 .vscode/

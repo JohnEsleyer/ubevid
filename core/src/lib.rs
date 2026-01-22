@@ -13,7 +13,7 @@ extern "C" {
 }
 
 // Embed default font
-static FONT_DATA: &[u8] = include_bytes!("../assets/Roboto-Regular.ttf"); 
+static FONT_DATA: &[u8] = include_bytes!("../../assets/Roboto-Regular.ttf"); 
 
 #[derive(Deserialize, Serialize, Debug)]
 #[serde(rename_all = "camelCase")]
@@ -243,10 +243,15 @@ impl UbeEngine {
                         let mut char_pixmap = Pixmap::new(metrics.width as u32, metrics.height as u32).unwrap();
                         for (i, alpha) in bitmap.iter().enumerate() {
                             let pixel_idx = i * 4;
-                            char_pixmap.data_mut()[pixel_idx] = (color.red() * 255.0) as u8;
-                            char_pixmap.data_mut()[pixel_idx+1] = (color.green() * 255.0) as u8;
-                            char_pixmap.data_mut()[pixel_idx+2] = (color.blue() * 255.0) as u8;
-                            char_pixmap.data_mut()[pixel_idx+3] = *alpha;
+                            
+                            // Normalize alpha to 0.0 - 1.0
+                            let a_norm = *alpha as f32 / 255.0;
+
+                            // PREMULTIPLY: Multiply the color channels by the alpha mask
+                            char_pixmap.data_mut()[pixel_idx]     = (color.red()   * 255.0 * a_norm) as u8;
+                            char_pixmap.data_mut()[pixel_idx + 1] = (color.green() * 255.0 * a_norm) as u8;
+                            char_pixmap.data_mut()[pixel_idx + 2] = (color.blue()  * 255.0 * a_norm) as u8;
+                            char_pixmap.data_mut()[pixel_idx + 3] = *alpha;
                         }
                         
                         let char_y = (size as i32 - metrics.height as i32 - metrics.ymin) as f32;

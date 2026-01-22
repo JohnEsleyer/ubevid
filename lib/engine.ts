@@ -8,32 +8,50 @@ declare global {
   var _ubevid_frame: number;
 }
 
+let engineInstance: any = null;
+
+async function getEngine(config: RenderConfig) {
+  if (!engineInstance) {
+    engineInstance = UbeEngine.new();
+    if (config.assets) {
+      for (const [id, path] of Object.entries(config.assets)) {
+        console.log(`   📦 Loading asset: [${id}] -> ${path}`);
+        const buffer = await readFile(path);
+        engineInstance.load_asset(id, new Uint8Array(buffer));
+      }
+    }
+  }
+  return engineInstance;
+}
+
+export async function renderSingleFrame(
+  sceneComponent: () => SceneNode,
+  config: RenderConfig,
+  frame: number
+): Promise<Uint8Array> {
+  const engine = await getEngine(config);
+  globalThis._ubevid_frame = frame;
+  const sceneGraph = sceneComponent();
+  
+  const w = Math.floor(config.width);
+  const h = Math.floor(config.height);
+  
+  const result = engine.render(JSON.stringify(sceneGraph), w, h);
+  
+  if (!result) throw new Error("Rust engine returned null pixels");
+  return result;
+}
+
 export async function render(
   sceneComponent: () => SceneNode,
   config: RenderConfig,
   outputFile: string
 ) {
-  const { width, height, fps, duration, assets } = config;
+  const { width, height, fps, duration } = config;
   const totalFrames = fps * duration;
-
-  console.log(`🎬 Ubevid Engine: Initializing Rust Core...`);
   
-  // 1. Initialize Wasm Engine
-  const engine = UbeEngine.new();
-
-  // 2. Load Assets
-  if (assets) {
-    for (const [id, path] of Object.entries(assets)) {
-      console.log(`   📦 Loading asset: [${id}] -> ${path}`);
-      try {
-        const buffer = await readFile(path);
-        // Pass Uint8Array to Rust
-        engine.load_asset(id, new Uint8Array(buffer));
-      } catch (e) {
-        console.error(`   ❌ Failed to load asset ${id}:`, e);
-      }
-    }
-  }
+  // Initialize engine and load assets
+  const engine = await getEngine(config);
 
   console.log(`🎬 Rendering ${totalFrames} frames to ${outputFile}...`);
 
@@ -52,15 +70,10 @@ export async function render(
 
   for (let i = 0; i < totalFrames; i++) {
     globalThis._ubevid_frame = i;
-
     const sceneGraph = sceneComponent(); 
-    const jsonString = JSON.stringify(sceneGraph);
-    
-    // Call Class Method instead of static function
-    const pixelBuffer = engine.render(jsonString, width, height) as Uint8Array;
+    const pixelBuffer = engine.render(JSON.stringify(sceneGraph), width, height) as Uint8Array;
     
     ffmpeg.stdin.write(pixelBuffer);
-
     if (i % 10 === 0) process.stdout.write(`.`);
   }
 

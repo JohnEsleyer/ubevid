@@ -26,3 +26,17 @@ export const Easing = {
     return n1 * (t -= 2.625 / d1) * t + 0.984375;
   }
 };
+
+// A simple seeded random generator (LCG)
+let _seed = 12345;
+export function setSeed(seed: number) { _seed = seed; }
+
+export function random(): number {
+  _seed = (_seed * 1664525 + 1013904223) % 4294967296;
+  return _seed / 4294967296;
+}
+
+// Helper for range
+export function randomRange(min: number, max: number) {
+  return min + random() * (max - min);
+}

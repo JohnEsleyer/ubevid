@@ -23,7 +23,7 @@ export interface StyleConfig {
   left?: number;
   right?: number;
   bottom?: number;
-  zIndex?: number; // New: Higher values stay on top
+  zIndex?: number;
   
   // Visuals
   backgroundColor?: string;
@@ -35,6 +35,12 @@ export interface StyleConfig {
   overflow?: "visible" | "hidden";
   grayscale?: number;
   
+  // Shadows (New)
+  shadowColor?: string;
+  shadowBlur?: number;
+  shadowOffsetX?: number;
+  shadowOffsetY?: number;
+
   // Text
   color?: string;
   fontSize?: number;
@@ -42,6 +48,9 @@ export interface StyleConfig {
   textAlign?: "left" | "center" | "right";
   lineHeight?: number;
   
+  // Image (New)
+  objectFit?: "fill" | "cover" | "contain";
+
   // Transforms
   rotate?: number;
   scale?: number;

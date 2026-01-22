@@ -55,6 +55,10 @@ pub struct StyleConfig {
     pub borderRadius: Option<f32>,
     pub borderColor: Option<String>,
     pub borderWidth: Option<f32>,
+    pub shadowColor: Option<String>,
+    pub shadowBlur: Option<f32>,
+    pub shadowOffsetX: Option<f32>,
+    pub shadowOffsetY: Option<f32>,
     pub opacity: Option<f32>,
     pub overflow: Option<String>,
     pub grayscale: Option<f32>,
@@ -63,6 +67,7 @@ pub struct StyleConfig {
     pub fontFamily: Option<String>,
     pub textAlign: Option<String>,
     pub lineHeight: Option<f32>,
+    pub objectFit: Option<String>,
     pub rotate: Option<f32>,
     pub scale: Option<f32>,
 }
@@ -228,7 +233,6 @@ impl UbeEngine {
                 transform = transform.pre_translate(cx, cy).pre_scale(s, s).pre_translate(-cx, -cy);
             }
 
-            // Cumulative Opacity
             let current_opacity = parent_opacity * node.style.opacity.unwrap_or(1.0);
 
             let mut pb = PathBuilder::new();
@@ -244,8 +248,21 @@ impl UbeEngine {
             let path = pb.finish().unwrap();
 
             let is_clipped = node.style.overflow.as_deref() == Some("hidden");
+
+            // 1. Box Shadow (Simplified as offset solid path - actual blur requires pixel pass)
+            if let Some(sc) = &node.style.shadowColor {
+                let mut shadow_paint = Paint::default();
+                let mut color = parse_color(sc);
+                color.set_alpha(color.alpha() * current_opacity * 0.5); // Fixed opacity for shadow simulation
+                shadow_paint.set_color(color);
+                
+                let ox = node.style.shadowOffsetX.unwrap_or(0.0);
+                let oy = node.style.shadowOffsetY.unwrap_or(0.0);
+                let shadow_transform = transform.post_translate(ox, oy);
+                pixmap.fill_path(&path, &shadow_paint, FillRule::Winding, shadow_transform, None);
+            }
             
-            // 1. Fill
+            // 2. Fill
             let mut fill_paint = Paint::default();
             let mut has_fill = false;
             if let Some(grad) = &node.style.backgroundGradient {
@@ -275,7 +292,7 @@ impl UbeEngine {
             }
             if has_fill { pixmap.fill_path(&path, &fill_paint, FillRule::Winding, transform, None); }
 
-            // 2. Borders
+            // 3. Borders
             if let Some(bw) = node.style.borderWidth {
                 if bw > 0.0 {
                     if let Some(bc) = &node.style.borderColor {
@@ -290,16 +307,32 @@ impl UbeEngine {
                 }
             }
 
-            // 3. Image
+            // 4. Image with Object Fit
             if node.tag == "image" {
                 if let Some(src) = &node.src {
                     if let Some(img_pixmap) = engine.assets.get(src) {
                         let mut img_paint = PixmapPaint::default();
                         img_paint.opacity = current_opacity;
                         img_paint.quality = FilterQuality::Bilinear;
-                        let sx = w / img_pixmap.width() as f32;
-                        let sy = h / img_pixmap.height() as f32;
-                        let img_transform = transform.pre_scale(sx, sy);
+                        
+                        let img_w = img_pixmap.width() as f32;
+                        let img_h = img_pixmap.height() as f32;
+                        
+                        let fit = node.style.objectFit.as_deref().unwrap_or("fill");
+                        let (sx, sy, tx, ty) = match fit {
+                            "cover" => {
+                                let s = (w / img_w).max(h / img_h);
+                                (s, s, (w - img_w * s) / 2.0, (h - img_h * s) / 2.0)
+                            },
+                            "contain" => {
+                                let s = (w / img_w).min(h / img_h);
+                                (s, s, (w - img_w * s) / 2.0, (h - img_h * s) / 2.0)
+                            },
+                            _ => (w / img_w, h / img_h, 0.0, 0.0),
+                        };
+
+                        let img_transform = transform.pre_translate(tx, ty).pre_scale(sx, sy);
+
                         if let Some(gs) = node.style.grayscale {
                             let mut filtered = img_pixmap.clone();
                             for p in filtered.data_mut().chunks_exact_mut(4) {
@@ -316,7 +349,7 @@ impl UbeEngine {
                 }
             }
 
-            // 4. Text
+            // 5. Text
             if let Some(text_content) = &node.text {
                 let font_name = node.style.fontFamily.as_deref().unwrap_or("default");
                 let font_opt = engine.fonts.get(font_name).or_else(|| engine.fonts.values().next());
@@ -362,14 +395,10 @@ impl UbeEngine {
                 }
             }
 
-            // 5. Children with Z-Index Sorting
+            // 6. Children
             if let Some(children) = &node.children {
                 let child_ids = taffy.children(layout_id).unwrap();
-                
-                // Pair children with their layout IDs to keep them linked during sort
                 let mut paired: Vec<_> = children.iter().zip(child_ids.iter()).collect();
-                
-                // Sort by style.zIndex (default to 0)
                 paired.sort_by_key(|(child, _)| child.style.zIndex.unwrap_or(0));
 
                 if is_clipped {

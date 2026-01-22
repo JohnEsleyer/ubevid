@@ -1,3 +1,9 @@
+export interface GradientConfig {
+  colors: string[];
+  stops?: number[];
+  angle?: number; // In degrees, e.g., 90 is left-to-right
+}
+
 export interface StyleConfig {
   width?: number;
   height?: number;
@@ -6,20 +12,34 @@ export interface StyleConfig {
   justifyContent?: "center" | "spaceBetween" | "flexStart" | "flexEnd";
   alignItems?: "center" | "flexStart" | "flexEnd";
   margin?: number;
+  marginTop?: number;
+  marginBottom?: number;
+  marginLeft?: number;
+  marginRight?: number;
   padding?: number;
+  
   position?: "relative" | "absolute";
   top?: number;
   left?: number;
   right?: number;
   bottom?: number;
+  
+  // Visuals
   backgroundColor?: string;
+  backgroundGradient?: GradientConfig; // New
   borderRadius?: number;
+  borderColor?: string;   // New
+  borderWidth?: number;   // New
   opacity?: number;
+  
+  // Text
   color?: string;
   fontSize?: number;
   fontFamily?: string;
-  textAlign?: "left" | "center" | "right"; // Added
+  textAlign?: "left" | "center" | "right";
   lineHeight?: number;
+  
+  // Transforms
   rotate?: number;
   scale?: number;
 }

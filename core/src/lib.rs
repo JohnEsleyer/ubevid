@@ -1,5 +1,5 @@
 use wasm_bindgen::prelude::*;
-use tiny_skia::{Pixmap, Paint, Transform, Color, PixmapPaint, PathBuilder, FillRule, FilterQuality};
+use tiny_skia::{Pixmap, Paint, Transform, Color, PixmapPaint, PathBuilder, FillRule, FilterQuality, LinearGradient, Point, SpreadMode, GradientStop};
 use serde::{Deserialize, Serialize};
 use taffy::prelude::*;
 use fontdue::{Font, FontSettings};
@@ -9,6 +9,14 @@ use std::collections::HashMap;
 extern "C" {
     #[wasm_bindgen(js_namespace = console)]
     fn log(s: &str);
+}
+
+#[derive(Deserialize, Serialize, Debug)]
+#[serde(rename_all = "camelCase")]
+pub struct GradientConfig {
+    pub colors: Vec<String>,
+    pub stops: Option<Vec<f32>>,
+    pub angle: Option<f32>,
 }
 
 #[derive(Deserialize, Serialize, Debug)]
@@ -31,6 +39,10 @@ pub struct StyleConfig {
     pub justifyContent: Option<String>,
     pub alignItems: Option<String>,
     pub margin: Option<f32>,
+    pub marginTop: Option<f32>,
+    pub marginBottom: Option<f32>,
+    pub marginLeft: Option<f32>,
+    pub marginRight: Option<f32>,
     pub padding: Option<f32>,
     pub position: Option<String>,
     pub top: Option<f32>,
@@ -38,12 +50,15 @@ pub struct StyleConfig {
     pub right: Option<f32>,
     pub bottom: Option<f32>,
     pub backgroundColor: Option<String>,
+    pub backgroundGradient: Option<GradientConfig>,
     pub borderRadius: Option<f32>,
+    pub borderColor: Option<String>,
+    pub borderWidth: Option<f32>,
     pub opacity: Option<f32>,
     pub color: Option<String>,
     pub fontSize: Option<f32>,
     pub fontFamily: Option<String>,
-    pub textAlign: Option<String>, // "left" | "center" | "right"
+    pub textAlign: Option<String>,
     pub lineHeight: Option<f32>,
     pub rotate: Option<f32>,
     pub scale: Option<f32>,
@@ -153,10 +168,10 @@ impl UbeEngine {
                     bottom: LengthPercentage::Points(node.style.padding.unwrap_or(0.0)),
                 },
                 margin: Rect {
-                    left: LengthPercentageAuto::Points(node.style.margin.unwrap_or(0.0)),
-                    right: LengthPercentageAuto::Points(node.style.margin.unwrap_or(0.0)),
-                    top: LengthPercentageAuto::Points(node.style.margin.unwrap_or(0.0)),
-                    bottom: LengthPercentageAuto::Points(node.style.margin.unwrap_or(0.0)),
+                    left: LengthPercentageAuto::Points(node.style.marginLeft.or(node.style.margin).unwrap_or(0.0)),
+                    right: LengthPercentageAuto::Points(node.style.marginRight.or(node.style.margin).unwrap_or(0.0)),
+                    top: LengthPercentageAuto::Points(node.style.marginTop.or(node.style.margin).unwrap_or(0.0)),
+                    bottom: LengthPercentageAuto::Points(node.style.marginBottom.or(node.style.margin).unwrap_or(0.0)),
                 },
                 ..Default::default()
             };
@@ -195,22 +210,70 @@ impl UbeEngine {
 
             let opacity = node.style.opacity.unwrap_or(1.0);
 
-            if let Some(bg) = &node.style.backgroundColor {
-                let mut paint = Paint::default();
+            let mut pb = PathBuilder::new();
+            if let Some(radius) = node.style.borderRadius {
+                let r = radius.min(w / 2.0).min(h / 2.0);
+                pb.move_to(r, 0.0); pb.line_to(w - r, 0.0); pb.quad_to(w, 0.0, w, r);
+                pb.line_to(w, h - r); pb.quad_to(w, h, w - r, h); pb.line_to(r, h);
+                pb.quad_to(0.0, h, 0.0, h - r); pb.line_to(0.0, r); pb.quad_to(0.0, 0.0, r, 0.0);
+                pb.close();
+            } else {
+                pb.move_to(0.0, 0.0); pb.line_to(w, 0.0); pb.line_to(w, h); pb.line_to(0.0, h); pb.close();
+            }
+            let path = pb.finish().unwrap();
+
+            let mut fill_paint = Paint::default();
+            let mut has_fill = false;
+
+            if let Some(grad) = &node.style.backgroundGradient {
+                let mut stops = Vec::new();
+                let colors_len = grad.colors.len();
+                
+                for i in 0..colors_len {
+                    let mut color = parse_color(&grad.colors[i]);
+                    color.set_alpha(color.alpha() * opacity);
+                    
+                    let pos = match &grad.stops {
+                        Some(s) => s[i],
+                        None => i as f32 / (colors_len as f32 - 1.0).max(1.0),
+                    };
+                    stops.push(GradientStop::new(pos, color));
+                }
+
+                let angle = grad.angle.unwrap_or(0.0).to_radians();
+                let dx = angle.cos();
+                let dy = angle.sin();
+                
+                let start = Point::from_xy(w/2.0 - dx*w/2.0, h/2.0 - dy*h/2.0);
+                let end = Point::from_xy(w/2.0 + dx*w/2.0, h/2.0 + dy*h/2.0);
+
+                if let Some(shader) = LinearGradient::new(start, end, stops, SpreadMode::Pad, Transform::identity()) {
+                    fill_paint.shader = shader;
+                    has_fill = true;
+                }
+            } else if let Some(bg) = &node.style.backgroundColor {
                 let mut color = parse_color(bg);
                 color.set_alpha(color.alpha() * opacity);
-                paint.set_color(color);
-                
-                if let Some(radius) = node.style.borderRadius {
-                    let mut pb = PathBuilder::new();
-                    let r = radius.min(w / 2.0).min(h / 2.0);
-                    pb.move_to(r, 0.0); pb.line_to(w - r, 0.0); pb.quad_to(w, 0.0, w, r);
-                    pb.line_to(w, h - r); pb.quad_to(w, h, w - r, h); pb.line_to(r, h);
-                    pb.quad_to(0.0, h, 0.0, h - r); pb.line_to(0.0, r); pb.quad_to(0.0, 0.0, r, 0.0);
-                    pb.close();
-                    if let Some(path) = pb.finish() { pixmap.fill_path(&path, &paint, FillRule::Winding, transform, None); }
-                } else if let Some(rect) = tiny_skia::Rect::from_xywh(0.0, 0.0, w, h) {
-                    pixmap.fill_rect(rect, &paint, transform, None);
+                fill_paint.set_color(color);
+                has_fill = true;
+            }
+
+            if has_fill {
+                pixmap.fill_path(&path, &fill_paint, FillRule::Winding, transform, None);
+            }
+
+            if let Some(bw) = node.style.borderWidth {
+                if bw > 0.0 {
+                    if let Some(bc) = &node.style.borderColor {
+                        let mut stroke_paint = Paint::default();
+                        let mut color = parse_color(bc);
+                        color.set_alpha(color.alpha() * opacity);
+                        stroke_paint.set_color(color);
+                        
+                        let mut stroke = tiny_skia::Stroke::default();
+                        stroke.width = bw;
+                        pixmap.stroke_path(&path, &stroke_paint, &stroke, transform, None);
+                    }
                 }
             }
 
@@ -235,9 +298,8 @@ impl UbeEngine {
                 if let Some(font) = font_opt {
                     let size = node.style.fontSize.unwrap_or(32.0);
                     let color = parse_color(node.style.color.as_deref().unwrap_or("#ffffff"));
-                    let max_width = w.max(1.0); // Safety floor
+                    let max_width = w.max(1.0);
 
-                    // Word-based Wrapping Logic
                     let mut lines: Vec<TextLine> = vec![TextLine { chars: vec![], width: 0.0 }];
                     let words = text_content.split(' ');
 
@@ -254,7 +316,6 @@ impl UbeEngine {
 
                         let line = lines.last_mut().unwrap();
                         if line.width + word_width > max_width && !line.chars.is_empty() {
-                            // Start new line, trim leading space
                             let trimmed_chars: Vec<(char, f32)> = word_chars.into_iter().skip(if i > 0 { 1 } else { 0 }).collect();
                             let trimmed_width: f32 = trimmed_chars.iter().map(|(_, a)| a).sum();
                             lines.push(TextLine { chars: trimmed_chars, width: trimmed_width });
@@ -269,8 +330,6 @@ impl UbeEngine {
 
                     for (line_idx, line) in lines.iter().enumerate() {
                         let line_y = line_idx as f32 * line_height;
-                        
-                        // Calculate Horizontal Alignment Offset
                         let mut current_x = match align {
                             "center" => (max_width - line.width) / 2.0,
                             "right" => max_width - line.width,

@@ -29,5 +29,6 @@ export interface RenderConfig {
   height: number;
   fps: number;
   duration: number;
-  assets?: Record<string, string>; // { "logo": "./assets/logo.png" }
+  assets?: Record<string, string>;
+  audio?: string;
 }

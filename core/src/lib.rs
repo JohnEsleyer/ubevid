@@ -202,6 +202,7 @@ impl UbeEngine {
 
             let opacity = node.style.opacity.unwrap_or(1.0);
 
+            // 1. Draw Background / Rect
             if let Some(bg) = &node.style.backgroundColor {
                 let mut paint = Paint::default();
                 let mut color = parse_color(bg);
@@ -213,6 +214,25 @@ impl UbeEngine {
                 }
             }
 
+            // 2. Draw Circle
+            if node.tag == "circle" {
+                let mut paint = Paint::default();
+                if let Some(bg) = &node.style.backgroundColor {
+                    let mut color = parse_color(bg);
+                    color.set_alpha(color.alpha() * opacity);
+                    paint.set_color(color);
+                }
+
+                let radius = layout.size.width.min(layout.size.height) / 2.0;
+                let mut path_builder = tiny_skia::PathBuilder::new();
+                path_builder.push_circle(radius, radius, radius);
+                
+                if let Some(path) = path_builder.finish() {
+                    pixmap.fill_path(&path, &paint, tiny_skia::FillRule::Winding, transform, None);
+                }
+            }
+
+            // 3. Draw Image
             if node.tag == "image" {
                 if let Some(src) = &node.src {
                     if let Some(img_pixmap) = engine.assets.get(src) {
@@ -229,6 +249,7 @@ impl UbeEngine {
                 }
             }
 
+            // 4. Draw Text
             if let Some(text_content) = &node.text {
                 let size = node.style.fontSize.unwrap_or(32.0);
                 let color = parse_color(node.style.color.as_deref().unwrap_or("#ffffff"));
@@ -256,6 +277,7 @@ impl UbeEngine {
                 }
             }
 
+            // 5. Recurse Children
             if let Some(children) = &node.children {
                 let child_ids = taffy.children(layout_id).unwrap();
                 for (i, child) in children.iter().enumerate() {

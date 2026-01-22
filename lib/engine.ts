@@ -6,6 +6,13 @@ import type { RenderConfig, SceneNode } from "./types.js";
 
 declare global {
   var _ubevid_frame: number;
+  var _ubevid_offset: number;
+}
+
+globalThis._ubevid_offset = 0;
+
+export function useFrame(): number {
+  return (globalThis._ubevid_frame || 0) - (globalThis._ubevid_offset || 0);
 }
 
 let engineInstance: any = null;
@@ -55,12 +62,20 @@ export async function render(
 
   console.log(`🎬 Rendering ${totalFrames} frames to ${outputFile}...`);
 
-  const ffmpeg = spawn([
-    "ffmpeg", "-y", "-f", "rawvideo", "-pix_fmt", "rgba",
-    "-s", `${width}x${height}`, "-r", `${fps}`,
-    "-i", "-", "-c:v", "libx264", "-preset", "ultrafast",
-    "-pix_fmt", "yuv420p", outputFile
-  ], {
+  const ffmpegArgs = [
+  "-y", "-f", "rawvideo", "-pix_fmt", "rgba",
+  "-s", `${width}x${height}`, "-r", `${fps}`,
+  "-i", "-", // Video from stdin
+  ];
+
+  if (config.audio) {
+    ffmpegArgs.push("-i", config.audio); // Add audio input
+    ffmpegArgs.push("-map", "0:v", "-map", "1:a", "-c:a", "aac", "-shortest");
+  }
+
+  ffmpegArgs.push("-c:v", "libx264", "-preset", "ultrafast", "-pix_fmt", "yuv420p", outputFile);
+
+  const ffmpeg = spawn(["ffmpeg", ...ffmpegArgs], {
     stdin: "pipe",
     stdout: "ignore",
     stderr: "inherit",
@@ -84,6 +99,21 @@ export async function render(
   console.log(`\n✅ Done! Saved to ${outputFile} in ${time.toFixed(2)}s`);
 }
 
-export function useFrame(): number {
-  return globalThis._ubevid_frame || 0;
+
+/**
+ * Sequence allows you to shift the start time of child components.
+ */
+export function Sequence(props: { from: number; children: () => SceneNode }): SceneNode {
+  const oldOffset = globalThis._ubevid_offset;
+  
+  // Apply the new offset
+  globalThis._ubevid_offset += props.from;
+  
+  // Render children with the new "local" time
+  const result = props.children();
+  
+  // Restore offset (for sibling sequences)
+  globalThis._ubevid_offset = oldOffset;
+  
+  return result;
 }

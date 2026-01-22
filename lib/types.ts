@@ -1,7 +1,7 @@
 export interface GradientConfig {
   colors: string[];
   stops?: number[];
-  angle?: number; // In degrees, e.g., 90 is left-to-right
+  angle?: number;
 }
 
 export interface StyleConfig {
@@ -26,11 +26,13 @@ export interface StyleConfig {
   
   // Visuals
   backgroundColor?: string;
-  backgroundGradient?: GradientConfig; // New
+  backgroundGradient?: GradientConfig;
   borderRadius?: number;
-  borderColor?: string;   // New
-  borderWidth?: number;   // New
+  borderColor?: string;
+  borderWidth?: number;
   opacity?: number;
+  overflow?: "visible" | "hidden"; // New
+  grayscale?: number;               // New (0 to 1)
   
   // Text
   color?: string;

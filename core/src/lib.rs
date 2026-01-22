@@ -1,5 +1,5 @@
 use wasm_bindgen::prelude::*;
-use tiny_skia::{Pixmap, Paint, Transform, Color, PixmapPaint, PathBuilder, FillRule, FilterQuality, LinearGradient, Point, SpreadMode, GradientStop};
+use tiny_skia::{Pixmap, Paint, Transform, Color, PixmapPaint, PathBuilder, FillRule, FilterQuality, LinearGradient, Point, SpreadMode, GradientStop, Mask};
 use serde::{Deserialize, Serialize};
 use taffy::prelude::*;
 use fontdue::{Font, FontSettings};
@@ -55,6 +55,8 @@ pub struct StyleConfig {
     pub borderColor: Option<String>,
     pub borderWidth: Option<f32>,
     pub opacity: Option<f32>,
+    pub overflow: Option<String>,
+    pub grayscale: Option<f32>,
     pub color: Option<String>,
     pub fontSize: Option<f32>,
     pub fontFamily: Option<String>,
@@ -198,6 +200,8 @@ impl UbeEngine {
             let w = layout.size.width;
             let h = layout.size.height;
 
+            if w <= 0.0 || h <= 0.0 { return; }
+
             let mut transform = Transform::from_translate(x, y);
             if let Some(r) = node.style.rotate {
                 let cx = w / 2.0; let cy = h / 2.0;
@@ -210,6 +214,7 @@ impl UbeEngine {
 
             let opacity = node.style.opacity.unwrap_or(1.0);
 
+            // Define the local path (rect or rounded)
             let mut pb = PathBuilder::new();
             if let Some(radius) = node.style.borderRadius {
                 let r = radius.min(w / 2.0).min(h / 2.0);
@@ -222,31 +227,32 @@ impl UbeEngine {
             }
             let path = pb.finish().unwrap();
 
+            // Handle Overflow Clipping
+            let is_clipped = node.style.overflow.as_deref() == Some("hidden");
+            
+            // Create a temporary pixmap if clipping or filters are active for the whole node
+            // For now, we apply clipping directly to the recursive draws.
+            
+            // 1. Draw Fill
             let mut fill_paint = Paint::default();
             let mut has_fill = false;
 
             if let Some(grad) = &node.style.backgroundGradient {
                 let mut stops = Vec::new();
                 let colors_len = grad.colors.len();
-                
                 for i in 0..colors_len {
                     let mut color = parse_color(&grad.colors[i]);
                     color.set_alpha(color.alpha() * opacity);
-                    
                     let pos = match &grad.stops {
                         Some(s) => s[i],
                         None => i as f32 / (colors_len as f32 - 1.0).max(1.0),
                     };
                     stops.push(GradientStop::new(pos, color));
                 }
-
                 let angle = grad.angle.unwrap_or(0.0).to_radians();
-                let dx = angle.cos();
-                let dy = angle.sin();
-                
+                let dx = angle.cos(); let dy = angle.sin();
                 let start = Point::from_xy(w/2.0 - dx*w/2.0, h/2.0 - dy*h/2.0);
                 let end = Point::from_xy(w/2.0 + dx*w/2.0, h/2.0 + dy*h/2.0);
-
                 if let Some(shader) = LinearGradient::new(start, end, stops, SpreadMode::Pad, Transform::identity()) {
                     fill_paint.shader = shader;
                     has_fill = true;
@@ -262,6 +268,7 @@ impl UbeEngine {
                 pixmap.fill_path(&path, &fill_paint, FillRule::Winding, transform, None);
             }
 
+            // 2. Draw Borders
             if let Some(bw) = node.style.borderWidth {
                 if bw > 0.0 {
                     if let Some(bc) = &node.style.borderColor {
@@ -269,7 +276,6 @@ impl UbeEngine {
                         let mut color = parse_color(bc);
                         color.set_alpha(color.alpha() * opacity);
                         stroke_paint.set_color(color);
-                        
                         let mut stroke = tiny_skia::Stroke::default();
                         stroke.width = bw;
                         pixmap.stroke_path(&path, &stroke_paint, &stroke, transform, None);
@@ -277,20 +283,43 @@ impl UbeEngine {
                 }
             }
 
+            // 3. Draw Image
             if node.tag == "image" {
                 if let Some(src) = &node.src {
                     if let Some(img_pixmap) = engine.assets.get(src) {
                         let mut img_paint = PixmapPaint::default();
                         img_paint.opacity = opacity;
                         img_paint.quality = FilterQuality::Bilinear;
+                        
                         let sx = w / img_pixmap.width() as f32;
                         let sy = h / img_pixmap.height() as f32;
                         let img_transform = transform.pre_scale(sx, sy);
-                        pixmap.draw_pixmap(0, 0, img_pixmap.as_ref(), &img_paint, img_transform, None);
+
+                        // Apply Grayscale if requested
+                        if let Some(gs) = node.style.grayscale {
+                            if gs > 0.0 {
+                                let mut filtered = img_pixmap.clone();
+                                for pixel in filtered.data_mut().chunks_exact_mut(4) {
+                                    let r = pixel[0] as f32;
+                                    let g = pixel[1] as f32;
+                                    let b = pixel[2] as f32;
+                                    let gray = (r * 0.299 + g * 0.587 + b * 0.114) as u8;
+                                    pixel[0] = (r * (1.0 - gs) + gray as f32 * gs) as u8;
+                                    pixel[1] = (g * (1.0 - gs) + gray as f32 * gs) as u8;
+                                    pixel[2] = (b * (1.0 - gs) + gray as f32 * gs) as u8;
+                                }
+                                pixmap.draw_pixmap(0, 0, filtered.as_ref(), &img_paint, img_transform, None);
+                            } else {
+                                pixmap.draw_pixmap(0, 0, img_pixmap.as_ref(), &img_paint, img_transform, None);
+                            }
+                        } else {
+                            pixmap.draw_pixmap(0, 0, img_pixmap.as_ref(), &img_paint, img_transform, None);
+                        }
                     }
                 }
             }
 
+            // 4. Draw Text
             if let Some(text_content) = &node.text {
                 let font_name = node.style.fontFamily.as_deref().unwrap_or("default");
                 let font_opt = engine.fonts.get(font_name).or_else(|| engine.fonts.values().next());
@@ -299,7 +328,6 @@ impl UbeEngine {
                     let size = node.style.fontSize.unwrap_or(32.0);
                     let color = parse_color(node.style.color.as_deref().unwrap_or("#ffffff"));
                     let max_width = w.max(1.0);
-
                     let mut lines: Vec<TextLine> = vec![TextLine { chars: vec![], width: 0.0 }];
                     let words = text_content.split(' ');
 
@@ -307,13 +335,11 @@ impl UbeEngine {
                         let word_with_space = if i == 0 { word.to_string() } else { format!(" {}", word) };
                         let mut word_width = 0.0;
                         let mut word_chars = vec![];
-
                         for c in word_with_space.chars() {
                             let adv = font.metrics(c, size).advance_width;
                             word_chars.push((c, adv));
                             word_width += adv;
                         }
-
                         let line = lines.last_mut().unwrap();
                         if line.width + word_width > max_width && !line.chars.is_empty() {
                             let trimmed_chars: Vec<(char, f32)> = word_chars.into_iter().skip(if i > 0 { 1 } else { 0 }).collect();
@@ -335,7 +361,6 @@ impl UbeEngine {
                             "right" => max_width - line.width,
                             _ => 0.0,
                         };
-
                         for (c, advance) in &line.chars {
                             let (metrics, bitmap) = font.rasterize(*c, size);
                             if metrics.width > 0 && metrics.height > 0 {
@@ -358,10 +383,27 @@ impl UbeEngine {
                 }
             }
 
+            // 5. Recursive children with optional clipping
             if let Some(children) = &node.children {
                 let child_ids = taffy.children(layout_id).unwrap();
-                for (i, child) in children.iter().enumerate() {
-                    draw(taffy, child, child_ids[i], pixmap, engine, x, y);
+                
+                if is_clipped {
+                    // Create a mask for clipping
+                    let mut mask = Mask::new(pixmap.width(), pixmap.height()).unwrap();
+                    mask.fill_path(&path, FillRule::Winding, true, transform);
+                    
+                    // We need to draw children to a separate pixmap then composite using the mask
+                    let mut layer = Pixmap::new(pixmap.width(), pixmap.height()).unwrap();
+                    for (i, child) in children.iter().enumerate() {
+                        draw(taffy, child, child_ids[i], &mut layer, engine, x, y);
+                    }
+                    
+                    // Composite layer into main pixmap using the mask
+                    pixmap.draw_pixmap(0, 0, layer.as_ref(), &PixmapPaint::default(), Transform::identity(), Some(&mask));
+                } else {
+                    for (i, child) in children.iter().enumerate() {
+                        draw(taffy, child, child_ids[i], pixmap, engine, x, y);
+                    }
                 }
             }
         }

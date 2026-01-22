@@ -1,5 +1,5 @@
 use wasm_bindgen::prelude::*;
-use tiny_skia::{Pixmap, Paint, Transform, Color, PixmapPaint, PathBuilder, FillRule, FilterQuality, LinearGradient, Point, SpreadMode, GradientStop, Mask};
+use tiny_skia::{Pixmap, Paint, Transform, Color, PixmapPaint, PathBuilder, FillRule, FilterQuality, LinearGradient, RadialGradient, Point, SpreadMode, GradientStop, Mask};
 use serde::{Deserialize, Serialize};
 use taffy::prelude::*;
 use fontdue::{Font, FontSettings};
@@ -14,6 +14,7 @@ extern "C" {
 #[derive(Deserialize, Serialize, Debug)]
 #[serde(rename_all = "camelCase")]
 pub struct GradientConfig {
+    pub r#type: Option<String>, // "linear" | "radial"
     pub colors: Vec<String>,
     pub stops: Option<Vec<f32>>,
     pub angle: Option<f32>,
@@ -34,6 +35,7 @@ pub struct SceneNode {
 pub struct StyleConfig {
     pub width: Option<f32>,
     pub height: Option<f32>,
+    pub aspectRatio: Option<f32>,
     pub flex: Option<f32>,
     pub flexDirection: Option<String>, 
     pub justifyContent: Option<String>,
@@ -67,6 +69,7 @@ pub struct StyleConfig {
     pub fontFamily: Option<String>,
     pub textAlign: Option<String>,
     pub lineHeight: Option<f32>,
+    pub letterSpacing: Option<f32>,
     pub objectFit: Option<String>,
     pub rotate: Option<f32>,
     pub scale: Option<f32>,
@@ -149,6 +152,7 @@ impl UbeEngine {
 
             let style = Style {
                 size: Size { width: w, height: h },
+                aspect_ratio: node.style.aspectRatio,
                 position: match node.style.position.as_deref() {
                     Some("absolute") => Position::Absolute,
                     _ => Position::Relative,
@@ -249,20 +253,15 @@ impl UbeEngine {
 
             let is_clipped = node.style.overflow.as_deref() == Some("hidden");
 
-            // 1. Box Shadow (Simplified as offset solid path - actual blur requires pixel pass)
             if let Some(sc) = &node.style.shadowColor {
                 let mut shadow_paint = Paint::default();
                 let mut color = parse_color(sc);
-                color.set_alpha(color.alpha() * current_opacity * 0.5); // Fixed opacity for shadow simulation
+                color.set_alpha(color.alpha() * current_opacity * 0.5);
                 shadow_paint.set_color(color);
-                
-                let ox = node.style.shadowOffsetX.unwrap_or(0.0);
-                let oy = node.style.shadowOffsetY.unwrap_or(0.0);
-                let shadow_transform = transform.post_translate(ox, oy);
+                let shadow_transform = transform.post_translate(node.style.shadowOffsetX.unwrap_or(0.0), node.style.shadowOffsetY.unwrap_or(0.0));
                 pixmap.fill_path(&path, &shadow_paint, FillRule::Winding, shadow_transform, None);
             }
             
-            // 2. Fill
             let mut fill_paint = Paint::default();
             let mut has_fill = false;
             if let Some(grad) = &node.style.backgroundGradient {
@@ -276,13 +275,22 @@ impl UbeEngine {
                     };
                     stops.push(GradientStop::new(pos, color));
                 }
-                let angle = grad.angle.unwrap_or(0.0).to_radians();
-                let dx = angle.cos(); let dy = angle.sin();
-                let start = Point::from_xy(w/2.0 - dx*w/2.0, h/2.0 - dy*h/2.0);
-                let end = Point::from_xy(w/2.0 + dx*w/2.0, h/2.0 + dy*h/2.0);
-                if let Some(shader) = LinearGradient::new(start, end, stops, SpreadMode::Pad, Transform::identity()) {
-                    fill_paint.shader = shader;
-                    has_fill = true;
+
+                if grad.r#type.as_deref() == Some("radial") {
+                    let center = Point::from_xy(w/2.0, h/2.0);
+                    let radius = (w.max(h)) / 1.5;
+                    // tiny-skia 0.11 RadialGradient::new requires center, focal, radius, stops, mode, transform
+                    if let Some(shader) = RadialGradient::new(center, center, radius, stops, SpreadMode::Pad, Transform::identity()) {
+                        fill_paint.shader = shader; has_fill = true;
+                    }
+                } else {
+                    let angle = grad.angle.unwrap_or(0.0).to_radians();
+                    let dx = angle.cos(); let dy = angle.sin();
+                    let start = Point::from_xy(w/2.0 - dx*w/2.0, h/2.0 - dy*h/2.0);
+                    let end = Point::from_xy(w/2.0 + dx*w/2.0, h/2.0 + dy*h/2.0);
+                    if let Some(shader) = LinearGradient::new(start, end, stops, SpreadMode::Pad, Transform::identity()) {
+                        fill_paint.shader = shader; has_fill = true;
+                    }
                 }
             } else if let Some(bg) = &node.style.backgroundColor {
                 let mut color = parse_color(bg);
@@ -292,7 +300,6 @@ impl UbeEngine {
             }
             if has_fill { pixmap.fill_path(&path, &fill_paint, FillRule::Winding, transform, None); }
 
-            // 3. Borders
             if let Some(bw) = node.style.borderWidth {
                 if bw > 0.0 {
                     if let Some(bc) = &node.style.borderColor {
@@ -307,32 +314,21 @@ impl UbeEngine {
                 }
             }
 
-            // 4. Image with Object Fit
             if node.tag == "image" {
                 if let Some(src) = &node.src {
                     if let Some(img_pixmap) = engine.assets.get(src) {
                         let mut img_paint = PixmapPaint::default();
                         img_paint.opacity = current_opacity;
                         img_paint.quality = FilterQuality::Bilinear;
-                        
                         let img_w = img_pixmap.width() as f32;
                         let img_h = img_pixmap.height() as f32;
-                        
                         let fit = node.style.objectFit.as_deref().unwrap_or("fill");
                         let (sx, sy, tx, ty) = match fit {
-                            "cover" => {
-                                let s = (w / img_w).max(h / img_h);
-                                (s, s, (w - img_w * s) / 2.0, (h - img_h * s) / 2.0)
-                            },
-                            "contain" => {
-                                let s = (w / img_w).min(h / img_h);
-                                (s, s, (w - img_w * s) / 2.0, (h - img_h * s) / 2.0)
-                            },
+                            "cover" => { let s = (w / img_w).max(h / img_h); (s, s, (w - img_w * s) / 2.0, (h - img_h * s) / 2.0) },
+                            "contain" => { let s = (w / img_w).min(h / img_h); (s, s, (w - img_w * s) / 2.0, (h - img_h * s) / 2.0) },
                             _ => (w / img_w, h / img_h, 0.0, 0.0),
                         };
-
                         let img_transform = transform.pre_translate(tx, ty).pre_scale(sx, sy);
-
                         if let Some(gs) = node.style.grayscale {
                             let mut filtered = img_pixmap.clone();
                             for p in filtered.data_mut().chunks_exact_mut(4) {
@@ -349,7 +345,6 @@ impl UbeEngine {
                 }
             }
 
-            // 5. Text
             if let Some(text_content) = &node.text {
                 let font_name = node.style.fontFamily.as_deref().unwrap_or("default");
                 let font_opt = engine.fonts.get(font_name).or_else(|| engine.fonts.values().next());
@@ -357,11 +352,14 @@ impl UbeEngine {
                     let size = node.style.fontSize.unwrap_or(32.0);
                     let color = parse_color(node.style.color.as_deref().unwrap_or("#ffffff"));
                     let mut lines: Vec<TextLine> = vec![TextLine { chars: vec![], width: 0.0 }];
+                    let letter_spacing = node.style.letterSpacing.unwrap_or(0.0);
+
                     for (i, word) in text_content.split(' ').enumerate() {
                         let word_with_space = if i == 0 { word.to_string() } else { format!(" {}", word) };
                         let mut ww = 0.0; let mut wc = vec![];
                         for c in word_with_space.chars() {
-                            let adv = font.metrics(c, size).advance_width; wc.push((c, adv)); ww += adv;
+                            let adv = font.metrics(c, size).advance_width + letter_spacing; 
+                            wc.push((c, adv)); ww += adv;
                         }
                         let line = lines.last_mut().unwrap();
                         if line.width + ww > w && !line.chars.is_empty() {
@@ -395,7 +393,6 @@ impl UbeEngine {
                 }
             }
 
-            // 6. Children
             if let Some(children) = &node.children {
                 let child_ids = taffy.children(layout_id).unwrap();
                 let mut paired: Vec<_> = children.iter().zip(child_ids.iter()).collect();

@@ -1,12 +1,14 @@
 export interface GradientConfig {
+  type?: "linear" | "radial"; // New
   colors: string[];
   stops?: number[];
-  angle?: number;
+  angle?: number; // For linear
 }
 
 export interface StyleConfig {
   width?: number;
   height?: number;
+  aspectRatio?: number; // New: e.g. 1.77 for 16:9
   flex?: number;
   flexDirection?: "row" | "column";
   justifyContent?: "center" | "spaceBetween" | "flexStart" | "flexEnd";
@@ -35,7 +37,7 @@ export interface StyleConfig {
   overflow?: "visible" | "hidden";
   grayscale?: number;
   
-  // Shadows (New)
+  // Shadows
   shadowColor?: string;
   shadowBlur?: number;
   shadowOffsetX?: number;
@@ -47,8 +49,9 @@ export interface StyleConfig {
   fontFamily?: string;
   textAlign?: "left" | "center" | "right";
   lineHeight?: number;
-  
-  // Image (New)
+  letterSpacing?: number; // New
+
+  // Image
   objectFit?: "fill" | "cover" | "contain";
 
   // Transforms

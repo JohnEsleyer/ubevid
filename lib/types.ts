@@ -5,6 +5,11 @@ export interface StyleConfig {
   margin?: number;
   padding?: number;
   flex?: number;
+  flexDirection?: "row" | "column";
+  justifyContent?: "center" | "spaceBetween" | "flexStart" | "flexEnd";
+  alignItems?: "center" | "flexStart" | "flexEnd";
+  rotate?: number;
+  scale?: number;
 }
 
 export interface SceneNode {

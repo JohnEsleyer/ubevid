@@ -1,11 +1,10 @@
 use wasm_bindgen::prelude::*;
-use tiny_skia::{Pixmap, Paint, Transform, Color};
+use tiny_skia::{Pixmap, Paint, Transform, Color, PixmapMut};
 use serde::{Deserialize, Serialize};
 use taffy::prelude::*;
 
-// --- 1. JSON Schema (Fixed for camelCase) ---
 #[derive(Deserialize, Serialize, Debug)]
-#[serde(rename_all = "camelCase")] // <--- THIS IS THE FIX
+#[serde(rename_all = "camelCase")]
 pub struct SceneNode {
     pub tag: String,
     pub style: StyleConfig,
@@ -13,77 +12,67 @@ pub struct SceneNode {
 }
 
 #[derive(Deserialize, Serialize, Debug, Default)]
-#[serde(rename_all = "camelCase")] // <--- THIS IS THE FIX
+#[serde(rename_all = "camelCase")]
 pub struct StyleConfig {
     pub width: Option<f32>,
     pub height: Option<f32>,
-    pub background_color: Option<String>, // Now accepts "backgroundColor" from JS
+    pub backgroundColor: Option<String>,
     pub margin: Option<f32>,
     pub padding: Option<f32>,
     pub flex: Option<f32>,
+    // New Flexbox Properties
+    pub flexDirection: Option<String>,   // "row", "column"
+    pub justifyContent: Option<String>,  // "center", "spaceBetween", etc.
+    pub alignItems: Option<String>,      // "center", "flexStart", etc.
+    // New Transform Properties
+    pub rotate: Option<f32>,             // degrees
+    pub scale: Option<f32>,
 }
 
-// --- 2. Robust Color Parser ---
 fn parse_color(hex: &str) -> Color {
     let hex = hex.trim_start_matches('#');
     let (r, g, b, a) = match hex.len() {
-        3 => { // Handle #RGB
+        3 => {
             let r = u8::from_str_radix(&hex[0..1], 16).unwrap_or(0) * 17;
             let g = u8::from_str_radix(&hex[1..2], 16).unwrap_or(0) * 17;
             let b = u8::from_str_radix(&hex[2..3], 16).unwrap_or(0) * 17;
             (r, g, b, 255)
         },
-        6 => { // Handle #RRGGBB
+        6 => {
             let r = u8::from_str_radix(&hex[0..2], 16).unwrap_or(0);
             let g = u8::from_str_radix(&hex[2..4], 16).unwrap_or(0);
             let b = u8::from_str_radix(&hex[4..6], 16).unwrap_or(0);
             (r, g, b, 255)
         },
-        8 => { // Handle #RRGGBBAA
-            let r = u8::from_str_radix(&hex[0..2], 16).unwrap_or(0);
-            let g = u8::from_str_radix(&hex[2..4], 16).unwrap_or(0);
-            let b = u8::from_str_radix(&hex[4..6], 16).unwrap_or(0);
-            let a = u8::from_str_radix(&hex[6..8], 16).unwrap_or(255);
-            (r, g, b, a)
-        },
-        _ => (255, 0, 255, 255) // Unknown = Magenta (Debug color)
+        _ => (255, 0, 255, 255)
     };
     Color::from_rgba8(r, g, b, a)
 }
 
-// --- 3. Render Pipeline ---
 #[wasm_bindgen]
 pub fn render_frame(json_input: &str, width: u32, height: u32) -> Vec<u8> {
-    // Check if JSON parses correctly
-    let root_node: SceneNode = match serde_json::from_str(json_input) {
-        Ok(n) => n,
-        Err(_) => return vec![0; (width * height * 4) as usize], // Return empty if parse fails
-    };
-
+    let root_node: SceneNode = serde_json::from_str(json_input).unwrap();
     let mut taffy = Taffy::new();
     
     fn build_taffy_tree(taffy: &mut Taffy, node: &SceneNode) -> Node {
-        let padding = if let Some(p) = node.style.padding {
-            taffy::geometry::Rect {
-                left: LengthPercentage::Points(p), right: LengthPercentage::Points(p),
-                top: LengthPercentage::Points(p), bottom: LengthPercentage::Points(p),
-            }
-        } else { taffy::geometry::Rect::zero() };
-
-        let margin = if let Some(m) = node.style.margin {
-            taffy::geometry::Rect {
-                left: LengthPercentageAuto::Points(m), right: LengthPercentageAuto::Points(m),
-                top: LengthPercentageAuto::Points(m), bottom: LengthPercentageAuto::Points(m),
-            }
-        } else { taffy::geometry::Rect::zero() };
-
         let style = Style {
             size: Size {
                 width: node.style.width.map(|v| Dimension::Points(v)).unwrap_or(Dimension::Auto),
                 height: node.style.height.map(|v| Dimension::Points(v)).unwrap_or(Dimension::Auto),
             },
-            padding,
-            margin,
+            flex_direction: match node.style.flexDirection.as_deref() {
+                Some("column") => FlexDirection::Column,
+                _ => FlexDirection::Row,
+            },
+            justify_content: match node.style.justifyContent.as_deref() {
+                Some("center") => Some(JustifyContent::Center),
+                Some("spaceBetween") => Some(JustifyContent::SpaceBetween),
+                _ => None,
+            },
+            align_items: match node.style.alignItems.as_deref() {
+                Some("center") => Some(AlignItems::Center),
+                _ => None,
+            },
             flex_grow: node.style.flex.unwrap_or(0.0),
             ..Default::default()
         };
@@ -94,16 +83,14 @@ pub fn render_frame(json_input: &str, width: u32, height: u32) -> Vec<u8> {
                 child_ids.push(build_taffy_tree(taffy, child));
             }
         }
-
         taffy.new_with_children(style, &child_ids).unwrap()
     }
 
     let root = build_taffy_tree(&mut taffy, &root_node);
-
-    taffy.compute_layout(
-        root,
-        Size { width: AvailableSpace::Definite(width as f32), height: AvailableSpace::Definite(height as f32) }
-    ).unwrap();
+    taffy.compute_layout(root, Size { 
+        width: AvailableSpace::Definite(width as f32), 
+        height: AvailableSpace::Definite(height as f32) 
+    }).unwrap();
 
     let mut pixmap = Pixmap::new(width, height).unwrap();
     
@@ -112,11 +99,23 @@ pub fn render_frame(json_input: &str, width: u32, height: u32) -> Vec<u8> {
         let abs_x = parent_x + layout.location.x;
         let abs_y = parent_y + layout.location.y;
 
-        if let Some(bg_hex) = &node.style.background_color {
+        if let Some(bg_hex) = &node.style.backgroundColor {
             let mut paint = Paint::default();
             paint.set_color(parse_color(bg_hex));
-            if let Some(rect) = tiny_skia::Rect::from_xywh(abs_x, abs_y, layout.size.width, layout.size.height) {
-                pixmap.fill_rect(rect, &paint, Transform::identity(), None);
+
+            // Apply Transformations
+            let mut ts = Transform::from_translate(abs_x + layout.size.width/2.0, abs_y + layout.size.height/2.0);
+            if let Some(deg) = node.style.rotate {
+                ts = ts.pre_rotate(deg);
+            }
+            if let Some(s) = node.style.scale {
+                ts = ts.pre_scale(s, s);
+            }
+            // Move back to top-left after rotation/scale
+            ts = ts.pre_translate(-layout.size.width/2.0, -layout.size.height/2.0);
+
+            if let Some(rect) = tiny_skia::Rect::from_xywh(0.0, 0.0, layout.size.width, layout.size.height) {
+                pixmap.fill_rect(rect, &paint, ts, None);
             }
         }
 

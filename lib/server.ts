@@ -41,53 +41,116 @@ export function startPreview(
         `
         <!DOCTYPE html>
         <html>
-          <head>
-              <title>Ubevid Preview</title>
-              <style>
-                  body { background: #000; color: #fff; font-family: sans-serif; display: flex; flex-direction: column; align-items: center; padding: 20px; margin: 0; }
-                  canvas { border: 1px solid #444; background: #111; max-width: 90vw; height: auto; }
-                  .ui { margin-top: 20px; width: 500px; max-width: 90vw; }
-                  input { width: 100%; height: 40px; }
-              </style>
-          </head>
-          <body>
-            <p>Ubevid Preview [Server: ${serverId}]</p>
-            <canvas id="stage" width="${config.width}" height="${config.height}"></canvas>
-            <div class="ui">
-              <input type="range" id="seeker" min="0" max="${config.fps * config.duration - 1}" value="0">
-              <div style="font-family: monospace; margin-top: 10px;">FRAME: <span id="fnum">0</span></div>
+            <head>
+                <title>Ubevid Preview</title>
+                <style>
+                    body { background: #000; color: #fff; font-family: system-ui, -apple-system, sans-serif; display: flex; flex-direction: column; align-items: center; padding: 40px; margin: 0; }
+                    canvas { border: 2px solid #333; background: #000; max-width: 90vw; height: auto; border-radius: 4px; box-shadow: 0 20px 50px rgba(0,0,0,0.5); }
+                    
+                    .controls { margin-top: 30px; background: #111; padding: 20px; border-radius: 12px; width: 800px; max-width: 90vw; border: 1px solid #222; }
+                    .seeker-container { width: 100%; display: flex; align-items: center; gap: 15px; }
+                    input[type=range] { flex: 1; cursor: pointer; accent-color: #8b5cf6; }
+                    
+                    .toolbar { display: flex; align-items: center; justify-content: space-between; margin-top: 15px; }
+                    .btn-play { 
+                        background: #8b5cf6; color: white; border: none; padding: 8px 24px; 
+                        border-radius: 6px; cursor: pointer; font-weight: bold; font-size: 14px;
+                        transition: background 0.2s; min-width: 100px;
+                    }
+                    .btn-play:hover { background: #7c3aed; }
+                    .btn-play.playing { background: #ef4444; }
+                    
+                    .stats { font-family: monospace; color: #666; font-size: 12px; }
+                    .stats span { color: #8b5cf6; }
+                </style>
+            </head>
+            <body>
+            <div style="margin-bottom: 20px; text-align: center;">
+                <h2 style="margin:0; color: #8b5cf6;">UBEVID PREVIEW</h2>
+                <p style="color: #444; font-size: 12px;">Server ID: ${serverId}</p>
             </div>
+
+            <canvas id="stage" width="${config.width}" height="${config.height}"></canvas>
+            
+            <div class="controls">
+                <div class="seeker-container">
+                    <input type="range" id="seeker" min="0" max="${config.fps * config.duration - 1}" value="0">
+                </div>
+                
+                <div class="toolbar">
+                    <button id="playBtn" class="btn-play">PLAY</button>
+                    <div class="stats">
+                        FRAME: <span id="fnum">0</span> / ${config.fps * config.duration - 1} 
+                        | FPS: <span>${config.fps}</span>
+                    </div>
+                </div>
+            </div>
+
             <script>
-              const canvas = document.getElementById('stage');
-              const ctx = canvas.getContext('2d');
-              const seeker = document.getElementById('seeker');
-              const fnum = document.getElementById('fnum');
+                const canvas = document.getElementById('stage');
+                const ctx = canvas.getContext('2d');
+                const seeker = document.getElementById('seeker');
+                const fnum = document.getElementById('fnum');
+                const playBtn = document.getElementById('playBtn');
 
-              async function update(f) {
-                  fnum.innerText = f;
-                  // COMPATIBILITY FIX: We fetch from the current URL root + params
-                  // This works perfectly behind Nginx/Cloud IDE proxies
-                  const res = await fetch('?f=' + f);
-                  
-                  if (!res.ok) return;
+                let isPlaying = false;
+                let lastFrameTime = 0;
+                const frameDelay = 1000 / ${config.fps};
 
-                  const buf = await res.arrayBuffer();
-                  const pix = new Uint8ClampedArray(buf);
-                  
-                  if (pix.length === ${config.width * config.height * 4}) {
-                      const dat = new ImageData(pix, ${config.width}, ${config.height});
-                      ctx.putImageData(dat, 0, 0);
-                  }
-              }
+                async function update(f) {
+                    f = parseInt(f);
+                    fnum.innerText = f;
+                    seeker.value = f;
+                    
+                    const res = await fetch('?f=' + f);
+                    if (!res.ok) return;
 
-              seeker.oninput = (e) => update(e.target.value);
-              update(0);
+                    const buf = await res.arrayBuffer();
+                    const pix = new Uint8ClampedArray(buf);
+                    
+                    if (pix.length === ${config.width * config.height * 4}) {
+                        const dat = new ImageData(pix, ${config.width}, ${config.height});
+                        ctx.putImageData(dat, 0, 0);
+                    }
+                }
+
+                function playLoop(timestamp) {
+                    if (!isPlaying) return;
+
+                    if (timestamp - lastFrameTime >= frameDelay) {
+                        let nextFrame = (parseInt(seeker.value) + 1);
+                        if (nextFrame >= ${config.fps * config.duration}) {
+                            nextFrame = 0;
+                        }
+                        update(nextFrame);
+                        lastFrameTime = timestamp;
+                    }
+                    requestAnimationFrame(playLoop);
+                }
+
+                playBtn.onclick = () => {
+                    isPlaying = !isPlaying;
+                    playBtn.innerText = isPlaying ? 'PAUSE' : 'PLAY';
+                    playBtn.classList.toggle('playing', isPlaying);
+                    if (isPlaying) {
+                        lastFrameTime = performance.now();
+                        requestAnimationFrame(playLoop);
+                    }
+                };
+
+                seeker.oninput = (e) => {
+                    if (isPlaying) playBtn.click(); // Pause if seeking
+                    update(e.target.value);
+                };
+
+                // Initial Frame
+                update(0);
             </script>
-          </body>
+            </body>
         </html>
         `,
         { headers: { "Content-Type": "text/html" } }
-      );
+        );
     },
   });
 }

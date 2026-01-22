@@ -23,6 +23,7 @@ export interface StyleConfig {
   left?: number;
   right?: number;
   bottom?: number;
+  zIndex?: number; // New: Higher values stay on top
   
   // Visuals
   backgroundColor?: string;
@@ -31,8 +32,8 @@ export interface StyleConfig {
   borderColor?: string;
   borderWidth?: number;
   opacity?: number;
-  overflow?: "visible" | "hidden"; // New
-  grayscale?: number;               // New (0 to 1)
+  overflow?: "visible" | "hidden";
+  grayscale?: number;
   
   // Text
   color?: string;

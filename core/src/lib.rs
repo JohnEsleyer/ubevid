@@ -2,12 +2,13 @@ use wasm_bindgen::prelude::*;
 use tiny_skia::{Pixmap, Paint, Transform, Color, PixmapPaint, PathBuilder, FillRule, FilterQuality, LinearGradient, RadialGradient, Point, SpreadMode, GradientStop, Mask, Stroke, LineCap, LineJoin, StrokeDash};
 use serde::{Deserialize, Serialize};
 use taffy::prelude::*;
-use taffy::node::MeasureFunc; // Fix: Import MeasureFunc explicitly
-use fontdue::{Font, FontSettings};
+use taffy::node::MeasureFunc; 
+use fontdue::{Font, FontSettings, Metrics};
 use std::collections::HashMap;
 use svgtypes::PathParser;
 use image::{ImageBuffer, Rgba};
 use std::sync::Arc;
+use std::cell::RefCell;
 
 #[wasm_bindgen]
 extern "C" {
@@ -110,6 +111,18 @@ pub struct StyleConfig {
 struct TextLine {
     chars: Vec<(char, f32)>,
     width: f32,
+}
+
+#[derive(Hash, Eq, PartialEq)]
+struct GlyphKey {
+    font: String,
+    c: char,
+    size: u32,
+}
+
+struct CachedGlyph {
+    metrics: Metrics,
+    bitmap: Vec<u8>,
 }
 
 fn parse_color(hex: &str) -> Color {
@@ -221,12 +234,38 @@ fn apply_image_filters(pixmap: &mut Pixmap, style: &StyleConfig) {
 pub struct UbeEngine {
     fonts: HashMap<String, Arc<Font>>,
     assets: HashMap<String, Pixmap>, 
+    glyph_cache: RefCell<HashMap<GlyphKey, Arc<CachedGlyph>>>,
+    scratch_buffer: RefCell<Vec<u8>>,
+}
+
+// Internal methods not exposed to JS
+impl UbeEngine {
+    fn get_glyph(&self, font_name: &str, font: &Font, c: char, size: f32) -> Arc<CachedGlyph> {
+        let key = GlyphKey { font: font_name.to_string(), c, size: (size * 100.0) as u32 };
+        
+        // Fast path
+        if let Some(g) = self.glyph_cache.borrow().get(&key) {
+            return g.clone();
+        }
+
+        // Slow path: Rasterize
+        let (metrics, bitmap) = font.rasterize(c, size);
+        let glyph = Arc::new(CachedGlyph { metrics, bitmap });
+        
+        self.glyph_cache.borrow_mut().insert(key, glyph.clone());
+        glyph
+    }
 }
 
 #[wasm_bindgen]
 impl UbeEngine {
     pub fn new() -> UbeEngine {
-        UbeEngine { fonts: HashMap::new(), assets: HashMap::new() }
+        UbeEngine { 
+            fonts: HashMap::new(), 
+            assets: HashMap::new(),
+            glyph_cache: RefCell::new(HashMap::new()),
+            scratch_buffer: RefCell::new(Vec::new()),
+        }
     }
 
     pub fn load_font(&mut self, name: &str, data: &[u8]) -> Result<(), JsValue> {
@@ -371,11 +410,9 @@ impl UbeEngine {
             }
 
             let current_opacity = parent_opacity * node.style.opacity.unwrap_or(1.0);
-            
-            // Fix: Define is_clipped in draw scope
             let is_clipped = node.style.overflow.as_deref() == Some("hidden");
 
-            // Path construction (re-used for clipping and drawing)
+            // Path construction
             let path = if node.tag == "path" && node.d.is_some() {
                 let mut pb = PathBuilder::new();
                 let mut current_x = 0.0;
@@ -494,7 +531,6 @@ impl UbeEngine {
                     let letter_spacing = node.style.letterSpacing.unwrap_or(0.0);
                     let align = node.style.textAlign.as_deref().unwrap_or("left");
 
-                    // Use Layout Width for wrapping if available, otherwise infinite
                     let wrap_width = if w > 0.0 { Some(w) } else { None };
                     
                     let lines = compute_text_lines(font, text_content, size, letter_spacing, wrap_width);
@@ -508,18 +544,39 @@ impl UbeEngine {
                         };
 
                         for (c, adv) in &line.chars {
-                            let (metrics, bitmap) = font.rasterize(*c, size);
+                            let glyph = engine.get_glyph(font_name, font, *c, size);
+                            let metrics = &glyph.metrics;
+
                             if metrics.width > 0 && metrics.height > 0 {
-                                let mut cp = Pixmap::new(metrics.width as u32, metrics.height as u32).unwrap();
-                                for (i, alpha) in bitmap.iter().enumerate() {
-                                    let a_norm = (*alpha as f32 / 255.0) * current_opacity;
-                                    cp.data_mut()[i*4] = (color.red()*255.0*a_norm) as u8;
-                                    cp.data_mut()[i*4+1] = (color.green()*255.0*a_norm) as u8;
-                                    cp.data_mut()[i*4+2] = (color.blue()*255.0*a_norm) as u8;
-                                    cp.data_mut()[i*4+3] = (a_norm*255.0) as u8;
+                                let gw = metrics.width as u32;
+                                let gh = metrics.height as u32;
+                                let req_len = (gw * gh * 4) as usize;
+                                
+                                let mut buffer = engine.scratch_buffer.borrow_mut();
+                                if buffer.len() < req_len {
+                                    buffer.resize(req_len, 0);
                                 }
-                                let cy = (ly + size - metrics.height as f32 - metrics.ymin as f32) as f32;
-                                pixmap.draw_pixmap(0, 0, cp.as_ref(), &PixmapPaint::default(), transform.post_translate(cx+metrics.xmin as f32, cy), None);
+                                
+                                let dest_slice = &mut buffer[0..req_len];
+                                
+                                // Color tinting loop (Alpha blending)
+                                for (i, alpha) in glyph.bitmap.iter().enumerate() {
+                                    let a_norm = (*alpha as f32 / 255.0) * current_opacity;
+                                    let r = (color.red() * 255.0 * a_norm) as u8;
+                                    let g = (color.green() * 255.0 * a_norm) as u8;
+                                    let b = (color.blue() * 255.0 * a_norm) as u8;
+                                    let a = (a_norm * 255.0) as u8;
+                                    
+                                    dest_slice[i*4] = r;
+                                    dest_slice[i*4+1] = g;
+                                    dest_slice[i*4+2] = b;
+                                    dest_slice[i*4+3] = a;
+                                }
+
+                                if let Some(glyph_pixmap) = tiny_skia::PixmapRef::from_bytes(dest_slice, gw, gh) {
+                                    let cy = (ly + size - metrics.height as f32 - metrics.ymin as f32) as f32;
+                                    pixmap.draw_pixmap(0, 0, glyph_pixmap, &PixmapPaint::default(), transform.post_translate(cx+metrics.xmin as f32, cy), None);
+                                }
                             }
                             cx += adv;
                         }

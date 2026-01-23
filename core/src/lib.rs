@@ -5,6 +5,7 @@ use taffy::prelude::*;
 use fontdue::{Font, FontSettings};
 use std::collections::HashMap;
 use svgtypes::PathParser;
+use image::{ImageBuffer, Rgba};
 
 #[wasm_bindgen]
 extern "C" {
@@ -69,9 +70,9 @@ pub struct StyleConfig {
     pub borderWidth: Option<f32>,
     pub opacity: Option<f32>,
     
-    // Strokes (Advanced)
-    pub strokeLineCap: Option<String>,   // "butt", "round", "square"
-    pub strokeLineJoin: Option<String>,  // "miter", "round", "bevel"
+    // Strokes
+    pub strokeLineCap: Option<String>,
+    pub strokeLineJoin: Option<String>,
     pub strokeDashArray: Option<Vec<f32>>,
     pub strokeDashOffset: Option<f32>,
 
@@ -80,6 +81,7 @@ pub struct StyleConfig {
     pub brightness: Option<f32>,
     pub contrast: Option<f32>,
     pub saturation: Option<f32>,
+    pub blur: Option<f32>, // Gaussian Blur radius
 
     // Shadows
     pub shadowColor: Option<String>,
@@ -129,42 +131,63 @@ fn apply_image_filters(pixmap: &mut Pixmap, style: &StyleConfig) {
     let br = style.brightness.unwrap_or(1.0).max(0.0);
     let ct = style.contrast.unwrap_or(1.0).max(0.0);
     let sat = style.saturation.unwrap_or(1.0).max(0.0);
+    let blur_radius = style.blur.unwrap_or(0.0).max(0.0);
 
-    if gs == 0.0 && br == 1.0 && ct == 1.0 && sat == 1.0 { return; }
+    // Color Matrix Ops
+    if gs != 0.0 || br != 1.0 || ct != 1.0 || sat != 1.0 {
+        let data = pixmap.data_mut();
+        for i in (0..data.len()).step_by(4) {
+            let alpha = data[i+3];
+            if alpha == 0 { continue; }
 
-    let data = pixmap.data_mut();
-    for i in (0..data.len()).step_by(4) {
-        let alpha = data[i+3];
-        if alpha == 0 { continue; }
+            let a_f = alpha as f32 / 255.0;
+            // Un-premultiply
+            let mut r = (data[i] as f32 / 255.0) / a_f;
+            let mut g = (data[i+1] as f32 / 255.0) / a_f;
+            let mut b = (data[i+2] as f32 / 255.0) / a_f;
 
-        let a_f = alpha as f32 / 255.0;
-        let mut r = (data[i] as f32 / 255.0) / a_f;
-        let mut g = (data[i+1] as f32 / 255.0) / a_f;
-        let mut b = (data[i+2] as f32 / 255.0) / a_f;
+            let lum = 0.2126 * r + 0.7152 * g + 0.0722 * b;
+            
+            let sat_r = lum * (1.0 - sat) + r * sat;
+            let sat_g = lum * (1.0 - sat) + g * sat;
+            let sat_b = lum * (1.0 - sat) + b * sat;
 
-        let lum = 0.2126 * r + 0.7152 * g + 0.0722 * b;
-        
-        let sat_r = lum * (1.0 - sat) + r * sat;
-        let sat_g = lum * (1.0 - sat) + g * sat;
-        let sat_b = lum * (1.0 - sat) + b * sat;
+            r = sat_r * (1.0 - gs) + lum * gs;
+            g = sat_g * (1.0 - gs) + lum * gs;
+            b = sat_b * (1.0 - gs) + lum * gs;
 
-        r = sat_r * (1.0 - gs) + lum * gs;
-        g = sat_g * (1.0 - gs) + lum * gs;
-        b = sat_b * (1.0 - gs) + lum * gs;
+            if ct != 1.0 {
+                r = (r - 0.5) * ct + 0.5;
+                g = (g - 0.5) * ct + 0.5;
+                b = (b - 0.5) * ct + 0.5;
+            }
 
-        if ct != 1.0 {
-            r = (r - 0.5) * ct + 0.5;
-            g = (g - 0.5) * ct + 0.5;
-            b = (b - 0.5) * ct + 0.5;
+            r *= br;
+            g *= br;
+            b *= br;
+
+            // Re-premultiply
+            data[i] = ((r * a_f * 255.0).clamp(0.0, 255.0)) as u8;
+            data[i+1] = ((g * a_f * 255.0).clamp(0.0, 255.0)) as u8;
+            data[i+2] = ((b * a_f * 255.0).clamp(0.0, 255.0)) as u8;
         }
+    }
 
-        r *= br;
-        g *= br;
-        b *= br;
-
-        data[i] = ((r * a_f * 255.0).clamp(0.0, 255.0)) as u8;
-        data[i+1] = ((g * a_f * 255.0).clamp(0.0, 255.0)) as u8;
-        data[i+2] = ((b * a_f * 255.0).clamp(0.0, 255.0)) as u8;
+    // Blur Operation (Expensive, done last)
+    if blur_radius > 0.0 {
+        let w = pixmap.width();
+        let h = pixmap.height();
+        
+        // Convert to ImageBuffer
+        if let Some(img_buffer) = ImageBuffer::<Rgba<u8>, Vec<u8>>::from_raw(w, h, pixmap.data().to_vec()) {
+            // Perform Gaussian Blur
+            // sigma ~ radius / 2.0 is a rough approximation for visual match
+            let blurred = image::imageops::blur(&img_buffer, blur_radius);
+            
+            // Write back
+            let data = pixmap.data_mut();
+            data.copy_from_slice(blurred.as_raw());
+        }
     }
 }
 
@@ -311,25 +334,21 @@ impl UbeEngine {
 
             let current_opacity = parent_opacity * node.style.opacity.unwrap_or(1.0);
 
-            // Path construction
             let path = if node.tag == "path" && node.d.is_some() {
                 let mut pb = PathBuilder::new();
                 let mut current_x = 0.0;
                 let mut current_y = 0.0;
-                
                 for segment in PathParser::from(node.d.as_ref().unwrap().as_str()) {
                     match segment {
                         Ok(svgtypes::PathSegment::MoveTo { abs, x, y }) => { 
                             let dx = if abs { x as f32 } else { current_x + x as f32 };
                             let dy = if abs { y as f32 } else { current_y + y as f32 };
-                            pb.move_to(dx, dy);
-                            current_x = dx; current_y = dy;
+                            pb.move_to(dx, dy); current_x = dx; current_y = dy;
                         },
                         Ok(svgtypes::PathSegment::LineTo { abs, x, y }) => { 
                             let dx = if abs { x as f32 } else { current_x + x as f32 };
                             let dy = if abs { y as f32 } else { current_y + y as f32 };
-                            pb.line_to(dx, dy);
-                            current_x = dx; current_y = dy;
+                            pb.line_to(dx, dy); current_x = dx; current_y = dy;
                         },
                         Ok(svgtypes::PathSegment::CurveTo { abs, x1, y1, x2, y2, x, y }) => { 
                             let cx1 = if abs { x1 as f32 } else { current_x + x1 as f32 };
@@ -338,47 +357,35 @@ impl UbeEngine {
                             let cy2 = if abs { y2 as f32 } else { current_y + y2 as f32 };
                             let dx = if abs { x as f32 } else { current_x + x as f32 };
                             let dy = if abs { y as f32 } else { current_y + y as f32 };
-                            pb.cubic_to(cx1, cy1, cx2, cy2, dx, dy);
-                            current_x = dx; current_y = dy;
+                            pb.cubic_to(cx1, cy1, cx2, cy2, dx, dy); current_x = dx; current_y = dy;
                         },
                         Ok(svgtypes::PathSegment::Quadratic { abs, x1, y1, x, y }) => { 
                             let cx1 = if abs { x1 as f32 } else { current_x + x1 as f32 };
                             let cy1 = if abs { y1 as f32 } else { current_y + y1 as f32 };
                             let dx = if abs { x as f32 } else { current_x + x as f32 };
                             let dy = if abs { y as f32 } else { current_y + y as f32 };
-                            pb.quad_to(cx1, cy1, dx, dy);
-                            current_x = dx; current_y = dy;
+                            pb.quad_to(cx1, cy1, dx, dy); current_x = dx; current_y = dy;
                         },
                         Ok(svgtypes::PathSegment::ClosePath { .. }) => { pb.close(); },
                         _ => {}
                     }
                 }
-                pb.finish().unwrap_or_else(|| {
-                   PathBuilder::from_rect(tiny_skia::Rect::from_xywh(0.0,0.0,w,h).unwrap())
-                })
+                pb.finish().unwrap_or_else(|| PathBuilder::from_rect(tiny_skia::Rect::from_xywh(0.0,0.0,w,h).unwrap()))
             } else {
                 let mut pb = PathBuilder::new();
                 let tl = node.style.borderTopLeftRadius.or(node.style.borderRadius).unwrap_or(0.0).min(w/2.0).min(h/2.0);
                 let tr = node.style.borderTopRightRadius.or(node.style.borderRadius).unwrap_or(0.0).min(w/2.0).min(h/2.0);
                 let br = node.style.borderBottomRightRadius.or(node.style.borderRadius).unwrap_or(0.0).min(w/2.0).min(h/2.0);
                 let bl = node.style.borderBottomLeftRadius.or(node.style.borderRadius).unwrap_or(0.0).min(w/2.0).min(h/2.0);
-
-                pb.move_to(tl, 0.0);
-                pb.line_to(w - tr, 0.0);
-                pb.quad_to(w, 0.0, w, tr);
-                pb.line_to(w, h - br);
-                pb.quad_to(w, h, w - br, h);
-                pb.line_to(bl, h);
-                pb.quad_to(0.0, h, 0.0, h - bl);
-                pb.line_to(0.0, tl);
-                pb.quad_to(0.0, 0.0, tl, 0.0);
-                pb.close();
+                pb.move_to(tl, 0.0); pb.line_to(w - tr, 0.0); pb.quad_to(w, 0.0, w, tr);
+                pb.line_to(w, h - br); pb.quad_to(w, h, w - br, h);
+                pb.line_to(bl, h); pb.quad_to(0.0, h, 0.0, h - bl);
+                pb.line_to(0.0, tl); pb.quad_to(0.0, 0.0, tl, 0.0); pb.close();
                 pb.finish().unwrap()
             };
 
             let is_clipped = node.style.overflow.as_deref() == Some("hidden");
 
-            // Shadow
             if let Some(sc) = &node.style.shadowColor {
                 let mut shadow_paint = Paint::default();
                 let mut color = parse_color(sc);
@@ -389,7 +396,6 @@ impl UbeEngine {
                 pixmap.fill_path(&path, &shadow_paint, FillRule::Winding, shadow_transform, None);
             }
             
-            // Fill
             let mut fill_paint = Paint::default();
             let mut has_fill = false;
             if let Some(grad) = &node.style.backgroundGradient {
@@ -403,7 +409,6 @@ impl UbeEngine {
                     };
                     stops.push(GradientStop::new(pos, color));
                 }
-
                 if grad.r#type.as_deref() == Some("radial") {
                     let center = Point::from_xy(w/2.0, h/2.0);
                     let radius = (w.max(h)) / 1.2;
@@ -427,7 +432,6 @@ impl UbeEngine {
             }
             if has_fill { pixmap.fill_path(&path, &fill_paint, FillRule::Winding, transform, None); }
 
-            // Stroke (Border)
             if let Some(bw) = node.style.borderWidth {
                 if bw > 0.0 {
                     if let Some(bc) = &node.style.borderColor {
@@ -435,37 +439,18 @@ impl UbeEngine {
                         let mut color = parse_color(bc);
                         color.set_alpha(color.alpha() * current_opacity);
                         stroke_paint.set_color(color);
-                        
                         let mut stroke = Stroke::default();
                         stroke.width = bw;
-                        
-                        // Apply Line Cap
-                        stroke.line_cap = match node.style.strokeLineCap.as_deref() {
-                            Some("round") => LineCap::Round,
-                            Some("square") => LineCap::Square,
-                            _ => LineCap::Butt,
-                        };
-
-                        // Apply Line Join
-                        stroke.line_join = match node.style.strokeLineJoin.as_deref() {
-                            Some("round") => LineJoin::Round,
-                            Some("bevel") => LineJoin::Bevel,
-                            _ => LineJoin::Miter,
-                        };
-
-                        // Apply Dash Pattern
+                        stroke.line_cap = match node.style.strokeLineCap.as_deref() { Some("round") => LineCap::Round, Some("square") => LineCap::Square, _ => LineCap::Butt };
+                        stroke.line_join = match node.style.strokeLineJoin.as_deref() { Some("round") => LineJoin::Round, Some("bevel") => LineJoin::Bevel, _ => LineJoin::Miter };
                         if let Some(dash_array) = &node.style.strokeDashArray {
-                            if !dash_array.is_empty() {
-                                stroke.dash = StrokeDash::new(dash_array.clone(), node.style.strokeDashOffset.unwrap_or(0.0));
-                            }
+                            if !dash_array.is_empty() { stroke.dash = StrokeDash::new(dash_array.clone(), node.style.strokeDashOffset.unwrap_or(0.0)); }
                         }
-
                         pixmap.stroke_path(&path, &stroke_paint, &stroke, transform, None);
                     }
                 }
             }
 
-            // Image
             if node.tag == "image" {
                 if let Some(src) = &node.src {
                     if let Some(img_pixmap) = engine.assets.get(src) {
@@ -482,7 +467,7 @@ impl UbeEngine {
                         };
                         let img_transform = transform.pre_translate(tx, ty).pre_scale(sx, sy);
                         
-                        let has_filters = node.style.grayscale.is_some() || node.style.brightness.is_some() || node.style.contrast.is_some() || node.style.saturation.is_some();
+                        let has_filters = node.style.grayscale.is_some() || node.style.brightness.is_some() || node.style.contrast.is_some() || node.style.saturation.is_some() || node.style.blur.is_some();
                         if has_filters {
                             let mut filtered = img_pixmap.clone();
                             apply_image_filters(&mut filtered, &node.style);
@@ -494,7 +479,6 @@ impl UbeEngine {
                 }
             }
 
-            // Text
             if let Some(text_content) = &node.text {
                 let font_name = node.style.fontFamily.as_deref().unwrap_or("default");
                 let font_opt = engine.fonts.get(font_name).or_else(|| engine.fonts.values().next());
@@ -503,7 +487,6 @@ impl UbeEngine {
                     let color = parse_color(node.style.color.as_deref().unwrap_or("#ffffff"));
                     let mut lines: Vec<TextLine> = vec![TextLine { chars: vec![], width: 0.0 }];
                     let letter_spacing = node.style.letterSpacing.unwrap_or(0.0);
-
                     for (i, word) in text_content.split(' ').enumerate() {
                         let word_with_space = if i == 0 { word.to_string() } else { format!(" {}", word) };
                         let mut ww = 0.0; let mut wc = vec![];
@@ -547,7 +530,6 @@ impl UbeEngine {
                 let child_ids = taffy.children(layout_id).unwrap();
                 let mut paired: Vec<_> = children.iter().zip(child_ids.iter()).collect();
                 paired.sort_by_key(|(child, _)| child.style.zIndex.unwrap_or(0));
-
                 if is_clipped {
                     let mut mask = Mask::new(pixmap.width(), pixmap.height()).unwrap();
                     mask.fill_path(&path, FillRule::Winding, true, transform);

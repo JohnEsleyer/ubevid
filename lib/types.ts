@@ -51,6 +51,7 @@ export interface StyleConfig {
   brightness?: number;
   contrast?: number;
   saturation?: number;
+  blur?: number; // Gaussian Blur radius in pixels
   
   // Shadows
   shadowColor?: string;

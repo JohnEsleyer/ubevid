@@ -4,6 +4,7 @@ use serde::{Deserialize, Serialize};
 use taffy::prelude::*;
 use fontdue::{Font, FontSettings};
 use std::collections::HashMap;
+use svgtypes::PathParser;
 
 #[wasm_bindgen]
 extern "C" {
@@ -244,33 +245,52 @@ impl UbeEngine {
 
             let current_opacity = parent_opacity * node.style.opacity.unwrap_or(1.0);
 
-            // Path calculation supporting rounded corners
-            let mut pb = PathBuilder::new();
-            let tl = node.style.borderTopLeftRadius.or(node.style.borderRadius).unwrap_or(0.0).min(w/2.0).min(h/2.0);
-            let tr = node.style.borderTopRightRadius.or(node.style.borderRadius).unwrap_or(0.0).min(w/2.0).min(h/2.0);
-            let br = node.style.borderBottomRightRadius.or(node.style.borderRadius).unwrap_or(0.0).min(w/2.0).min(h/2.0);
-            let bl = node.style.borderBottomLeftRadius.or(node.style.borderRadius).unwrap_or(0.0).min(w/2.0).min(h/2.0);
+            let path = if node.tag == "path" && node.d.is_some() {
+                let mut pb = PathBuilder::new();
+                for segment in PathParser::from(node.d.as_ref().unwrap().as_str()) {
+                    match segment {
+                        Ok(svgtypes::PathSegment::MoveTo { abs, x, y }) => { if abs { pb.move_to(x as f32, y as f32); } },
+                        Ok(svgtypes::PathSegment::LineTo { abs, x, y }) => { if abs { pb.line_to(x as f32, y as f32); } },
+                        Ok(svgtypes::PathSegment::CurveTo { abs, x1, y1, x2, y2, x, y }) => { if abs { pb.cubic_to(x1 as f32, y1 as f32, x2 as f32, y2 as f32, x as f32, y as f32); } },
+                        Ok(svgtypes::PathSegment::Quadratic { abs, x1, y1, x, y }) => { if abs { pb.quad_to(x1 as f32, y1 as f32, x as f32, y as f32); } },
+                        Ok(svgtypes::PathSegment::ClosePath { .. }) => { pb.close(); },
+                        _ => {}
+                    }
+                }
+                pb.finish().unwrap_or_else(|| {
+                    let mut fallback = PathBuilder::new();
+                    fallback.move_to(0.0, 0.0); fallback.line_to(w, 0.0); fallback.line_to(w, h); fallback.line_to(0.0, h); fallback.close();
+                    fallback.finish().unwrap()
+                })
+            } else {
+                let mut pb = PathBuilder::new();
+                let tl = node.style.borderTopLeftRadius.or(node.style.borderRadius).unwrap_or(0.0).min(w/2.0).min(h/2.0);
+                let tr = node.style.borderTopRightRadius.or(node.style.borderRadius).unwrap_or(0.0).min(w/2.0).min(h/2.0);
+                let br = node.style.borderBottomRightRadius.or(node.style.borderRadius).unwrap_or(0.0).min(w/2.0).min(h/2.0);
+                let bl = node.style.borderBottomLeftRadius.or(node.style.borderRadius).unwrap_or(0.0).min(w/2.0).min(h/2.0);
 
-            pb.move_to(tl, 0.0);
-            pb.line_to(w - tr, 0.0);
-            pb.quad_to(w, 0.0, w, tr);
-            pb.line_to(w, h - br);
-            pb.quad_to(w, h, w - br, h);
-            pb.line_to(bl, h);
-            pb.quad_to(0.0, h, 0.0, h - bl);
-            pb.line_to(0.0, tl);
-            pb.quad_to(0.0, 0.0, tl, 0.0);
-            pb.close();
-            let path = pb.finish().unwrap();
+                pb.move_to(tl, 0.0);
+                pb.line_to(w - tr, 0.0);
+                pb.quad_to(w, 0.0, w, tr);
+                pb.line_to(w, h - br);
+                pb.quad_to(w, h, w - br, h);
+                pb.line_to(bl, h);
+                pb.quad_to(0.0, h, 0.0, h - bl);
+                pb.line_to(0.0, tl);
+                pb.quad_to(0.0, 0.0, tl, 0.0);
+                pb.close();
+                pb.finish().unwrap()
+            };
 
             let is_clipped = node.style.overflow.as_deref() == Some("hidden");
 
             if let Some(sc) = &node.style.shadowColor {
                 let mut shadow_paint = Paint::default();
                 let mut color = parse_color(sc);
-                color.set_alpha(color.alpha() * current_opacity * 0.5);
+                let blur_alpha = (current_opacity * 0.3).min(1.0); // Soften shadow
+                color.set_alpha(color.alpha() * blur_alpha);
                 shadow_paint.set_color(color);
-                let shadow_transform = transform.post_translate(node.style.shadowOffsetX.unwrap_or(0.0), node.style.shadowOffsetY.unwrap_or(0.0));
+                let shadow_transform = transform.post_translate(node.style.shadowOffsetX.unwrap_or(10.0), node.style.shadowOffsetY.unwrap_or(10.0));
                 pixmap.fill_path(&path, &shadow_paint, FillRule::Winding, shadow_transform, None);
             }
             
@@ -290,7 +310,7 @@ impl UbeEngine {
 
                 if grad.r#type.as_deref() == Some("radial") {
                     let center = Point::from_xy(w/2.0, h/2.0);
-                    let radius = (w.max(h)) / 1.5;
+                    let radius = (w.max(h)) / 1.2;
                     if let Some(shader) = RadialGradient::new(center, center, radius, stops, SpreadMode::Pad, Transform::identity()) {
                         fill_paint.shader = shader; has_fill = true;
                     }

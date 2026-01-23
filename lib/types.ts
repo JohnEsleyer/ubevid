@@ -52,6 +52,8 @@ export interface StyleConfig {
   contrast?: number;
   saturation?: number;
   blur?: number;
+  invert?: number;
+  sepia?: number;
   
   // Shadows
   shadowColor?: string;

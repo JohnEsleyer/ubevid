@@ -58,6 +58,8 @@ pub struct StyleConfig {
     pub contrast: Option<f32>,
     pub saturation: Option<f32>,
     pub blur: Option<f32>,
+    pub invert: Option<f32>,
+    pub sepia: Option<f32>,
 
     // Shadows
     pub shadowColor: Option<String>,

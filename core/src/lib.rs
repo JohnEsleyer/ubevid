@@ -1,5 +1,5 @@
 use wasm_bindgen::prelude::*;
-use tiny_skia::{Pixmap, Paint, Transform, Color, PixmapPaint, PathBuilder, FillRule, FilterQuality, LinearGradient, RadialGradient, Point, SpreadMode, GradientStop, Mask};
+use tiny_skia::{Pixmap, Paint, Transform, Color, PixmapPaint, PathBuilder, FillRule, FilterQuality, LinearGradient, RadialGradient, Point, SpreadMode, GradientStop, Mask, Stroke, LineCap, LineJoin, StrokeDash};
 use serde::{Deserialize, Serialize};
 use taffy::prelude::*;
 use fontdue::{Font, FontSettings};
@@ -69,6 +69,12 @@ pub struct StyleConfig {
     pub borderWidth: Option<f32>,
     pub opacity: Option<f32>,
     
+    // Strokes (Advanced)
+    pub strokeLineCap: Option<String>,   // "butt", "round", "square"
+    pub strokeLineJoin: Option<String>,  // "miter", "round", "bevel"
+    pub strokeDashArray: Option<Vec<f32>>,
+    pub strokeDashOffset: Option<f32>,
+
     // Filters
     pub grayscale: Option<f32>,
     pub brightness: Option<f32>,
@@ -124,7 +130,6 @@ fn apply_image_filters(pixmap: &mut Pixmap, style: &StyleConfig) {
     let ct = style.contrast.unwrap_or(1.0).max(0.0);
     let sat = style.saturation.unwrap_or(1.0).max(0.0);
 
-    // Skip if no filters
     if gs == 0.0 && br == 1.0 && ct == 1.0 && sat == 1.0 { return; }
 
     let data = pixmap.data_mut();
@@ -133,37 +138,30 @@ fn apply_image_filters(pixmap: &mut Pixmap, style: &StyleConfig) {
         if alpha == 0 { continue; }
 
         let a_f = alpha as f32 / 255.0;
-        // Un-premultiply
         let mut r = (data[i] as f32 / 255.0) / a_f;
         let mut g = (data[i+1] as f32 / 255.0) / a_f;
         let mut b = (data[i+2] as f32 / 255.0) / a_f;
 
-        // 1. Grayscale & Saturation
         let lum = 0.2126 * r + 0.7152 * g + 0.0722 * b;
         
-        // Saturation mixing
         let sat_r = lum * (1.0 - sat) + r * sat;
         let sat_g = lum * (1.0 - sat) + g * sat;
         let sat_b = lum * (1.0 - sat) + b * sat;
 
-        // Grayscale mixing
         r = sat_r * (1.0 - gs) + lum * gs;
         g = sat_g * (1.0 - gs) + lum * gs;
         b = sat_b * (1.0 - gs) + lum * gs;
 
-        // 2. Contrast
         if ct != 1.0 {
             r = (r - 0.5) * ct + 0.5;
             g = (g - 0.5) * ct + 0.5;
             b = (b - 0.5) * ct + 0.5;
         }
 
-        // 3. Brightness
         r *= br;
         g *= br;
         b *= br;
 
-        // Re-premultiply and Clamp
         data[i] = ((r * a_f * 255.0).clamp(0.0, 255.0)) as u8;
         data[i+1] = ((g * a_f * 255.0).clamp(0.0, 255.0)) as u8;
         data[i+2] = ((b * a_f * 255.0).clamp(0.0, 255.0)) as u8;
@@ -313,6 +311,7 @@ impl UbeEngine {
 
             let current_opacity = parent_opacity * node.style.opacity.unwrap_or(1.0);
 
+            // Path construction
             let path = if node.tag == "path" && node.d.is_some() {
                 let mut pb = PathBuilder::new();
                 let mut current_x = 0.0;
@@ -379,6 +378,7 @@ impl UbeEngine {
 
             let is_clipped = node.style.overflow.as_deref() == Some("hidden");
 
+            // Shadow
             if let Some(sc) = &node.style.shadowColor {
                 let mut shadow_paint = Paint::default();
                 let mut color = parse_color(sc);
@@ -389,6 +389,7 @@ impl UbeEngine {
                 pixmap.fill_path(&path, &shadow_paint, FillRule::Winding, shadow_transform, None);
             }
             
+            // Fill
             let mut fill_paint = Paint::default();
             let mut has_fill = false;
             if let Some(grad) = &node.style.backgroundGradient {
@@ -426,6 +427,7 @@ impl UbeEngine {
             }
             if has_fill { pixmap.fill_path(&path, &fill_paint, FillRule::Winding, transform, None); }
 
+            // Stroke (Border)
             if let Some(bw) = node.style.borderWidth {
                 if bw > 0.0 {
                     if let Some(bc) = &node.style.borderColor {
@@ -433,13 +435,37 @@ impl UbeEngine {
                         let mut color = parse_color(bc);
                         color.set_alpha(color.alpha() * current_opacity);
                         stroke_paint.set_color(color);
-                        let mut stroke = tiny_skia::Stroke::default();
+                        
+                        let mut stroke = Stroke::default();
                         stroke.width = bw;
+                        
+                        // Apply Line Cap
+                        stroke.line_cap = match node.style.strokeLineCap.as_deref() {
+                            Some("round") => LineCap::Round,
+                            Some("square") => LineCap::Square,
+                            _ => LineCap::Butt,
+                        };
+
+                        // Apply Line Join
+                        stroke.line_join = match node.style.strokeLineJoin.as_deref() {
+                            Some("round") => LineJoin::Round,
+                            Some("bevel") => LineJoin::Bevel,
+                            _ => LineJoin::Miter,
+                        };
+
+                        // Apply Dash Pattern
+                        if let Some(dash_array) = &node.style.strokeDashArray {
+                            if !dash_array.is_empty() {
+                                stroke.dash = StrokeDash::new(dash_array.clone(), node.style.strokeDashOffset.unwrap_or(0.0));
+                            }
+                        }
+
                         pixmap.stroke_path(&path, &stroke_paint, &stroke, transform, None);
                     }
                 }
             }
 
+            // Image
             if node.tag == "image" {
                 if let Some(src) = &node.src {
                     if let Some(img_pixmap) = engine.assets.get(src) {
@@ -468,6 +494,7 @@ impl UbeEngine {
                 }
             }
 
+            // Text
             if let Some(text_content) = &node.text {
                 let font_name = node.style.fontFamily.as_deref().unwrap_or("default");
                 let font_opt = engine.fonts.get(font_name).or_else(|| engine.fonts.values().next());

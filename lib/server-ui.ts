@@ -22,6 +22,14 @@ export function getPreviewHTML(config: RenderConfig, totalFrames: number): strin
               padding: 8px 12px; border-radius: 6px; font-family: ui-monospace, monospace; font-size: 10px;
               color: #4ade80; border: 1px solid #222; pointer-events: none;
           }
+          .connection-status {
+              position: fixed; bottom: 20px; right: 20px;
+              padding: 8px 16px; border-radius: 20px; font-size: 12px; font-weight: bold;
+              background: #ef4444; color: white; opacity: 0; transition: opacity 0.3s;
+              pointer-events: none;
+          }
+          .connection-status.show { opacity: 1; }
+          
           canvas { max-width: 90vw; max-height: 60vh; object-fit: contain; }
           
           .controls { 
@@ -78,6 +86,8 @@ export function getPreviewHTML(config: RenderConfig, totalFrames: number): strin
           </div>
       </div>
 
+      <div id="connectionStatus" class="connection-status">🔌 DISCONNECTED</div>
+
       <script>
           const canvas = document.getElementById('stage');
           const ctx = canvas.getContext('2d');
@@ -86,11 +96,13 @@ export function getPreviewHTML(config: RenderConfig, totalFrames: number): strin
           const hud = document.getElementById('hud');
           const playBtn = document.getElementById('playBtn');
           const dlBtn = document.getElementById('dlBtn');
+          const connStatus = document.getElementById('connectionStatus');
 
           let isPlaying = false;
           let lastFrameTime = 0;
           const frameDelay = 1000 / ${config.fps};
           const totalFrames = ${totalFrames};
+          let isConnected = true;
 
           async function update(f) {
               f = Math.max(0, Math.min(parseInt(f), totalFrames - 1));
@@ -100,7 +112,13 @@ export function getPreviewHTML(config: RenderConfig, totalFrames: number): strin
               const start = performance.now();
               try {
                   const res = await fetch(window.location.pathname + '?f=' + f);
-                  if (!res.ok) return;
+                  
+                  if (!res.ok) throw new Error("Server error");
+                  
+                  if (!isConnected) {
+                      isConnected = true;
+                      connStatus.classList.remove('show');
+                  }
 
                   const buf = await res.arrayBuffer();
                   const pix = new Uint8ClampedArray(buf);
@@ -108,11 +126,26 @@ export function getPreviewHTML(config: RenderConfig, totalFrames: number): strin
                   ctx.putImageData(dat, 0, 0);
                   
                   const dur = (performance.now() - start).toFixed(1);
-                  // Approximate memory check if available (Chrome)
                   const mem = window.performance.memory ? Math.round(window.performance.memory.usedJSHeapSize / 1024 / 1024) : '-';
                   hud.innerText = 'RNDR: ' + dur + 'ms';
-              } catch (e) {}
+              } catch (e) {
+                  // Connection lost logic
+                  if (isConnected) {
+                      isConnected = false;
+                      connStatus.classList.add('show');
+                      connStatus.innerText = "🔌 RECONNECTING...";
+                  }
+              }
           }
+
+          // Live Reload Polling
+          // If the server restarts (via bun --watch), fetch will fail then succeed.
+          // We check /?f=X every second if not playing to ensure we display latest code changes.
+          setInterval(() => {
+              if (!isPlaying) {
+                  update(seeker.value);
+              }
+          }, 1000);
 
           function loop(time) {
               if (!isPlaying) return;

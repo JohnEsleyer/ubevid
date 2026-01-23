@@ -40,6 +40,12 @@ export interface StyleConfig {
   opacity?: number;
   overflow?: "visible" | "hidden";
 
+  // Strokes
+  strokeLineCap?: "butt" | "round" | "square";
+  strokeLineJoin?: "miter" | "round" | "bevel";
+  strokeDashArray?: number[];
+  strokeDashOffset?: number;
+
   // Filters
   grayscale?: number;
   brightness?: number;

@@ -39,7 +39,12 @@ export interface StyleConfig {
   borderWidth?: number;
   opacity?: number;
   overflow?: "visible" | "hidden";
+
+  // Filters
   grayscale?: number;
+  brightness?: number;
+  contrast?: number;
+  saturation?: number;
   
   // Shadows
   shadowColor?: string;

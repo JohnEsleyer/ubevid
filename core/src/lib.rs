@@ -1,5 +1,5 @@
 use wasm_bindgen::prelude::*;
-use tiny_skia::{Pixmap, Paint, Transform, Color, PixmapPaint, PathBuilder, Path, FillRule, FilterQuality, LinearGradient, RadialGradient, Point, SpreadMode, GradientStop, Mask};
+use tiny_skia::{Pixmap, Paint, Transform, Color, PixmapPaint, PathBuilder, FillRule, FilterQuality, LinearGradient, RadialGradient, Point, SpreadMode, GradientStop, Mask};
 use serde::{Deserialize, Serialize};
 use taffy::prelude::*;
 use fontdue::{Font, FontSettings};
@@ -35,6 +35,7 @@ pub struct SceneNode {
 #[derive(Deserialize, Serialize, Debug, Default)]
 #[serde(rename_all = "camelCase")]
 pub struct StyleConfig {
+    // Layout
     pub width: Option<f32>,
     pub height: Option<f32>,
     pub aspectRatio: Option<f32>,
@@ -54,6 +55,9 @@ pub struct StyleConfig {
     pub right: Option<f32>,
     pub bottom: Option<f32>,
     pub zIndex: Option<i32>,
+    pub overflow: Option<String>,
+
+    // Visuals
     pub backgroundColor: Option<String>,
     pub backgroundGradient: Option<GradientConfig>,
     pub borderRadius: Option<f32>,
@@ -63,20 +67,32 @@ pub struct StyleConfig {
     pub borderBottomRightRadius: Option<f32>,
     pub borderColor: Option<String>,
     pub borderWidth: Option<f32>,
+    pub opacity: Option<f32>,
+    
+    // Filters
+    pub grayscale: Option<f32>,
+    pub brightness: Option<f32>,
+    pub contrast: Option<f32>,
+    pub saturation: Option<f32>,
+
+    // Shadows
     pub shadowColor: Option<String>,
     pub shadowBlur: Option<f32>,
     pub shadowOffsetX: Option<f32>,
     pub shadowOffsetY: Option<f32>,
-    pub opacity: Option<f32>,
-    pub overflow: Option<String>,
-    pub grayscale: Option<f32>,
+    
+    // Text
     pub color: Option<String>,
     pub fontSize: Option<f32>,
     pub fontFamily: Option<String>,
     pub textAlign: Option<String>,
     pub lineHeight: Option<f32>,
     pub letterSpacing: Option<f32>,
+
+    // Image
     pub objectFit: Option<String>,
+    
+    // Transform
     pub rotate: Option<f32>,
     pub scale: Option<f32>,
 }
@@ -100,6 +116,58 @@ fn parse_color(hex: &str) -> Color {
         _ => (255, 255, 255, 255)
     };
     Color::from_rgba8(r, g, b, a)
+}
+
+fn apply_image_filters(pixmap: &mut Pixmap, style: &StyleConfig) {
+    let gs = style.grayscale.unwrap_or(0.0).clamp(0.0, 1.0);
+    let br = style.brightness.unwrap_or(1.0).max(0.0);
+    let ct = style.contrast.unwrap_or(1.0).max(0.0);
+    let sat = style.saturation.unwrap_or(1.0).max(0.0);
+
+    // Skip if no filters
+    if gs == 0.0 && br == 1.0 && ct == 1.0 && sat == 1.0 { return; }
+
+    let data = pixmap.data_mut();
+    for i in (0..data.len()).step_by(4) {
+        let alpha = data[i+3];
+        if alpha == 0 { continue; }
+
+        let a_f = alpha as f32 / 255.0;
+        // Un-premultiply
+        let mut r = (data[i] as f32 / 255.0) / a_f;
+        let mut g = (data[i+1] as f32 / 255.0) / a_f;
+        let mut b = (data[i+2] as f32 / 255.0) / a_f;
+
+        // 1. Grayscale & Saturation
+        let lum = 0.2126 * r + 0.7152 * g + 0.0722 * b;
+        
+        // Saturation mixing
+        let sat_r = lum * (1.0 - sat) + r * sat;
+        let sat_g = lum * (1.0 - sat) + g * sat;
+        let sat_b = lum * (1.0 - sat) + b * sat;
+
+        // Grayscale mixing
+        r = sat_r * (1.0 - gs) + lum * gs;
+        g = sat_g * (1.0 - gs) + lum * gs;
+        b = sat_b * (1.0 - gs) + lum * gs;
+
+        // 2. Contrast
+        if ct != 1.0 {
+            r = (r - 0.5) * ct + 0.5;
+            g = (g - 0.5) * ct + 0.5;
+            b = (b - 0.5) * ct + 0.5;
+        }
+
+        // 3. Brightness
+        r *= br;
+        g *= br;
+        b *= br;
+
+        // Re-premultiply and Clamp
+        data[i] = ((r * a_f * 255.0).clamp(0.0, 255.0)) as u8;
+        data[i+1] = ((g * a_f * 255.0).clamp(0.0, 255.0)) as u8;
+        data[i+2] = ((b * a_f * 255.0).clamp(0.0, 255.0)) as u8;
+    }
 }
 
 #[wasm_bindgen]
@@ -247,20 +315,47 @@ impl UbeEngine {
 
             let path = if node.tag == "path" && node.d.is_some() {
                 let mut pb = PathBuilder::new();
+                let mut current_x = 0.0;
+                let mut current_y = 0.0;
+                
                 for segment in PathParser::from(node.d.as_ref().unwrap().as_str()) {
                     match segment {
-                        Ok(svgtypes::PathSegment::MoveTo { abs, x, y }) => { if abs { pb.move_to(x as f32, y as f32); } },
-                        Ok(svgtypes::PathSegment::LineTo { abs, x, y }) => { if abs { pb.line_to(x as f32, y as f32); } },
-                        Ok(svgtypes::PathSegment::CurveTo { abs, x1, y1, x2, y2, x, y }) => { if abs { pb.cubic_to(x1 as f32, y1 as f32, x2 as f32, y2 as f32, x as f32, y as f32); } },
-                        Ok(svgtypes::PathSegment::Quadratic { abs, x1, y1, x, y }) => { if abs { pb.quad_to(x1 as f32, y1 as f32, x as f32, y as f32); } },
+                        Ok(svgtypes::PathSegment::MoveTo { abs, x, y }) => { 
+                            let dx = if abs { x as f32 } else { current_x + x as f32 };
+                            let dy = if abs { y as f32 } else { current_y + y as f32 };
+                            pb.move_to(dx, dy);
+                            current_x = dx; current_y = dy;
+                        },
+                        Ok(svgtypes::PathSegment::LineTo { abs, x, y }) => { 
+                            let dx = if abs { x as f32 } else { current_x + x as f32 };
+                            let dy = if abs { y as f32 } else { current_y + y as f32 };
+                            pb.line_to(dx, dy);
+                            current_x = dx; current_y = dy;
+                        },
+                        Ok(svgtypes::PathSegment::CurveTo { abs, x1, y1, x2, y2, x, y }) => { 
+                            let cx1 = if abs { x1 as f32 } else { current_x + x1 as f32 };
+                            let cy1 = if abs { y1 as f32 } else { current_y + y1 as f32 };
+                            let cx2 = if abs { x2 as f32 } else { current_x + x2 as f32 };
+                            let cy2 = if abs { y2 as f32 } else { current_y + y2 as f32 };
+                            let dx = if abs { x as f32 } else { current_x + x as f32 };
+                            let dy = if abs { y as f32 } else { current_y + y as f32 };
+                            pb.cubic_to(cx1, cy1, cx2, cy2, dx, dy);
+                            current_x = dx; current_y = dy;
+                        },
+                        Ok(svgtypes::PathSegment::Quadratic { abs, x1, y1, x, y }) => { 
+                            let cx1 = if abs { x1 as f32 } else { current_x + x1 as f32 };
+                            let cy1 = if abs { y1 as f32 } else { current_y + y1 as f32 };
+                            let dx = if abs { x as f32 } else { current_x + x as f32 };
+                            let dy = if abs { y as f32 } else { current_y + y as f32 };
+                            pb.quad_to(cx1, cy1, dx, dy);
+                            current_x = dx; current_y = dy;
+                        },
                         Ok(svgtypes::PathSegment::ClosePath { .. }) => { pb.close(); },
                         _ => {}
                     }
                 }
                 pb.finish().unwrap_or_else(|| {
-                    let mut fallback = PathBuilder::new();
-                    fallback.move_to(0.0, 0.0); fallback.line_to(w, 0.0); fallback.line_to(w, h); fallback.line_to(0.0, h); fallback.close();
-                    fallback.finish().unwrap()
+                   PathBuilder::from_rect(tiny_skia::Rect::from_xywh(0.0,0.0,w,h).unwrap())
                 })
             } else {
                 let mut pb = PathBuilder::new();
@@ -287,7 +382,7 @@ impl UbeEngine {
             if let Some(sc) = &node.style.shadowColor {
                 let mut shadow_paint = Paint::default();
                 let mut color = parse_color(sc);
-                let blur_alpha = (current_opacity * 0.3).min(1.0); // Soften shadow
+                let blur_alpha = (current_opacity * 0.3).min(1.0);
                 color.set_alpha(color.alpha() * blur_alpha);
                 shadow_paint.set_color(color);
                 let shadow_transform = transform.post_translate(node.style.shadowOffsetX.unwrap_or(10.0), node.style.shadowOffsetY.unwrap_or(10.0));
@@ -360,14 +455,11 @@ impl UbeEngine {
                             _ => (w / img_w, h / img_h, 0.0, 0.0),
                         };
                         let img_transform = transform.pre_translate(tx, ty).pre_scale(sx, sy);
-                        if let Some(gs) = node.style.grayscale {
+                        
+                        let has_filters = node.style.grayscale.is_some() || node.style.brightness.is_some() || node.style.contrast.is_some() || node.style.saturation.is_some();
+                        if has_filters {
                             let mut filtered = img_pixmap.clone();
-                            for p in filtered.data_mut().chunks_exact_mut(4) {
-                                let gray = (p[0] as f32 * 0.299 + p[1] as f32 * 0.587 + p[2] as f32 * 0.114) as u8;
-                                p[0] = (p[0] as f32 * (1.0 - gs) + gray as f32 * gs) as u8;
-                                p[1] = (p[1] as f32 * (1.0 - gs) + gray as f32 * gs) as u8;
-                                p[2] = (p[2] as f32 * (1.0 - gs) + gray as f32 * gs) as u8;
-                            }
+                            apply_image_filters(&mut filtered, &node.style);
                             pixmap.draw_pixmap(0, 0, filtered.as_ref(), &img_paint, img_transform, None);
                         } else {
                             pixmap.draw_pixmap(0, 0, img_pixmap.as_ref(), &img_paint, img_transform, None);

@@ -2,26 +2,37 @@ import init, { UbeEngine } from "../core/pkg/ubevid_core.js";
 import { readFile } from "fs/promises";
 import { join } from "path";
 import { spawn } from "bun";
+import { AudioAnalyzer } from "./audio.js";
 import type { RenderConfig, SceneNode } from "./types.js";
 
-export { startPreview } from "./server"; 
+export { startPreview } from "./server.js"; 
 
 declare global {
   var _ubevid_frame: number;
   var _ubevid_offset: number;
+  var _ubevid_audio: AudioAnalyzer | null;
 }
 
 globalThis._ubevid_frame = 0;
 globalThis._ubevid_offset = 0;
+globalThis._ubevid_audio = null;
 
 let engineInstance: any = null;
 let wasmInitialized = false;
 
+// Singleton Audio Analyzer
+const audioAnalyzer = new AudioAnalyzer();
+
 async function getEngine(config: RenderConfig) {
+  // 0. Load Audio if present
+  if (config.audio && !globalThis._ubevid_audio) {
+    await audioAnalyzer.load(config.audio);
+    globalThis._ubevid_audio = audioAnalyzer;
+  }
+
   // 1. Initialize Wasm Module if not already done
   if (!wasmInitialized) {
     try {
-      // Find the wasm file relative to this script
       const wasmPath = join(import.meta.dir, "../core/pkg/ubevid_core_bg.wasm");
       const wasmBuffer = await readFile(wasmPath);
       await init(wasmBuffer);
@@ -68,6 +79,11 @@ export function useFrame(): number {
   return (globalThis._ubevid_frame || 0) - (globalThis._ubevid_offset || 0);
 }
 
+export function useAudio(fps: number = 30): number {
+  if (!globalThis._ubevid_audio) return 0;
+  return globalThis._ubevid_audio.getVolume(globalThis._ubevid_frame, fps);
+}
+
 export function Sequence(props: { from: number; children: () => SceneNode }): SceneNode {
   const previousOffset = globalThis._ubevid_offset;
   globalThis._ubevid_offset += props.from;
@@ -102,6 +118,7 @@ export async function render<T>(
   console.log(`🎬 Ubevid: Rendering ${totalFrames} frames...`);
   const ffmpegArgs = ["-y", "-f", "rawvideo", "-pix_fmt", "rgba", "-s", `${width}x${height}`, "-r", `${fps}`, "-i", "-"];
   if (config.audio) {
+    // If audio exists, input it and map stream 1:a to output
     ffmpegArgs.push("-i", config.audio, "-map", "0:v", "-map", "1:a", "-c:a", "aac", "-shortest");
   }
   ffmpegArgs.push("-c:v", "libx264", "-preset", "ultrafast", "-pix_fmt", "yuv420p", outputFile);

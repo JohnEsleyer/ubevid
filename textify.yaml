@@ -27,6 +27,11 @@ dirs:
             - ts
             - gitignore
             - lock
+    assets:
+        enabled: true
+        extensions:
+            - ttf
+            - png
     core:
         enabled: true
         extensions:

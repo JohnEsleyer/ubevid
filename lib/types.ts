@@ -76,7 +76,7 @@ export interface StyleConfig {
 }
 
 export interface SceneNode {
-  tag: "view" | "text" | "image" | "circle" | "rect" | "path";
+  tag: "view" | "text" | "image" | "circle" | "rect" | "path" | "ellipse";
   text?: string;
   src?: string;
   d?: string;

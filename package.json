@@ -8,6 +8,10 @@
     "core/pkg"
   ],
   "type": "module",
+  "scripts": {
+    "test": "bun test",
+    "build:wasm": "cd core && wasm-pack build --target web"
+  },
   "devDependencies": {
     "@types/bun": "latest"
   },

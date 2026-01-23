@@ -1,5 +1,5 @@
 use wasm_bindgen::prelude::*;
-use tiny_skia::{Pixmap, Paint, Transform, Color, PixmapPaint, PathBuilder, FillRule, FilterQuality, LinearGradient, RadialGradient, Point, SpreadMode, GradientStop, Mask};
+use tiny_skia::{Pixmap, Paint, Transform, Color, PixmapPaint, PathBuilder, Path, FillRule, FilterQuality, LinearGradient, RadialGradient, Point, SpreadMode, GradientStop, Mask};
 use serde::{Deserialize, Serialize};
 use taffy::prelude::*;
 use fontdue::{Font, FontSettings};
@@ -14,7 +14,7 @@ extern "C" {
 #[derive(Deserialize, Serialize, Debug)]
 #[serde(rename_all = "camelCase")]
 pub struct GradientConfig {
-    pub r#type: Option<String>, // "linear" | "radial"
+    pub r#type: Option<String>,
     pub colors: Vec<String>,
     pub stops: Option<Vec<f32>>,
     pub angle: Option<f32>,
@@ -26,6 +26,7 @@ pub struct SceneNode {
     pub tag: String,
     pub text: Option<String>,
     pub src: Option<String>,
+    pub d: Option<String>,
     pub style: StyleConfig,
     pub children: Option<Vec<SceneNode>>,
 }
@@ -55,6 +56,10 @@ pub struct StyleConfig {
     pub backgroundColor: Option<String>,
     pub backgroundGradient: Option<GradientConfig>,
     pub borderRadius: Option<f32>,
+    pub borderTopLeftRadius: Option<f32>,
+    pub borderTopRightRadius: Option<f32>,
+    pub borderBottomLeftRadius: Option<f32>,
+    pub borderBottomRightRadius: Option<f32>,
     pub borderColor: Option<String>,
     pub borderWidth: Option<f32>,
     pub shadowColor: Option<String>,
@@ -239,16 +244,23 @@ impl UbeEngine {
 
             let current_opacity = parent_opacity * node.style.opacity.unwrap_or(1.0);
 
+            // Path calculation supporting rounded corners
             let mut pb = PathBuilder::new();
-            if let Some(radius) = node.style.borderRadius {
-                let r = radius.min(w / 2.0).min(h / 2.0);
-                pb.move_to(r, 0.0); pb.line_to(w - r, 0.0); pb.quad_to(w, 0.0, w, r);
-                pb.line_to(w, h - r); pb.quad_to(w, h, w - r, h); pb.line_to(r, h);
-                pb.quad_to(0.0, h, 0.0, h - r); pb.line_to(0.0, r); pb.quad_to(0.0, 0.0, r, 0.0);
-                pb.close();
-            } else {
-                pb.move_to(0.0, 0.0); pb.line_to(w, 0.0); pb.line_to(w, h); pb.line_to(0.0, h); pb.close();
-            }
+            let tl = node.style.borderTopLeftRadius.or(node.style.borderRadius).unwrap_or(0.0).min(w/2.0).min(h/2.0);
+            let tr = node.style.borderTopRightRadius.or(node.style.borderRadius).unwrap_or(0.0).min(w/2.0).min(h/2.0);
+            let br = node.style.borderBottomRightRadius.or(node.style.borderRadius).unwrap_or(0.0).min(w/2.0).min(h/2.0);
+            let bl = node.style.borderBottomLeftRadius.or(node.style.borderRadius).unwrap_or(0.0).min(w/2.0).min(h/2.0);
+
+            pb.move_to(tl, 0.0);
+            pb.line_to(w - tr, 0.0);
+            pb.quad_to(w, 0.0, w, tr);
+            pb.line_to(w, h - br);
+            pb.quad_to(w, h, w - br, h);
+            pb.line_to(bl, h);
+            pb.quad_to(0.0, h, 0.0, h - bl);
+            pb.line_to(0.0, tl);
+            pb.quad_to(0.0, 0.0, tl, 0.0);
+            pb.close();
             let path = pb.finish().unwrap();
 
             let is_clipped = node.style.overflow.as_deref() == Some("hidden");
@@ -279,7 +291,6 @@ impl UbeEngine {
                 if grad.r#type.as_deref() == Some("radial") {
                     let center = Point::from_xy(w/2.0, h/2.0);
                     let radius = (w.max(h)) / 1.5;
-                    // tiny-skia 0.11 RadialGradient::new requires center, focal, radius, stops, mode, transform
                     if let Some(shader) = RadialGradient::new(center, center, radius, stops, SpreadMode::Pad, Transform::identity()) {
                         fill_paint.shader = shader; has_fill = true;
                     }

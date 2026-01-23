@@ -1,14 +1,14 @@
 export interface GradientConfig {
-  type?: "linear" | "radial"; // New
+  type?: "linear" | "radial";
   colors: string[];
   stops?: number[];
-  angle?: number; // For linear
+  angle?: number;
 }
 
 export interface StyleConfig {
   width?: number;
   height?: number;
-  aspectRatio?: number; // New: e.g. 1.77 for 16:9
+  aspectRatio?: number;
   flex?: number;
   flexDirection?: "row" | "column";
   justifyContent?: "center" | "spaceBetween" | "flexStart" | "flexEnd";
@@ -31,6 +31,10 @@ export interface StyleConfig {
   backgroundColor?: string;
   backgroundGradient?: GradientConfig;
   borderRadius?: number;
+  borderTopLeftRadius?: number;
+  borderTopRightRadius?: number;
+  borderBottomLeftRadius?: number;
+  borderBottomRightRadius?: number;
   borderColor?: string;
   borderWidth?: number;
   opacity?: number;
@@ -49,7 +53,7 @@ export interface StyleConfig {
   fontFamily?: string;
   textAlign?: "left" | "center" | "right";
   lineHeight?: number;
-  letterSpacing?: number; // New
+  letterSpacing?: number;
 
   // Image
   objectFit?: "fill" | "cover" | "contain";
@@ -60,9 +64,10 @@ export interface StyleConfig {
 }
 
 export interface SceneNode {
-  tag: "view" | "text" | "image" | "circle" | "rect";
+  tag: "view" | "text" | "image" | "circle" | "rect" | "path";
   text?: string;
   src?: string;
+  d?: string;
   style: StyleConfig;
   children?: SceneNode[];
 }

@@ -51,7 +51,7 @@ export interface StyleConfig {
   brightness?: number;
   contrast?: number;
   saturation?: number;
-  blur?: number; // Gaussian Blur radius in pixels
+  blur?: number;
   
   // Shadows
   shadowColor?: string;
@@ -92,4 +92,8 @@ export interface RenderConfig {
   assets?: Record<string, string>;
   fonts?: Record<string, string>;
   audio?: string;
+  
+  // Motion Blur
+  motionBlurSamples?: number; // e.g., 4, 8, 16. Default 0 (off)
+  shutterAngle?: number;      // 0 to 360. Default 180 (standard cinematic)
 }

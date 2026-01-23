@@ -20,17 +20,14 @@ globalThis._ubevid_audio = null;
 let engineInstance: any = null;
 let wasmInitialized = false;
 
-// Singleton Audio Analyzer
 const audioAnalyzer = new AudioAnalyzer();
 
 async function getEngine(config: RenderConfig) {
-  // 0. Load Audio if present
   if (config.audio && !globalThis._ubevid_audio) {
     await audioAnalyzer.load(config.audio);
     globalThis._ubevid_audio = audioAnalyzer;
   }
 
-  // 1. Initialize Wasm Module if not already done
   if (!wasmInitialized) {
     try {
       const wasmPath = join(import.meta.dir, "../core/pkg/ubevid_core_bg.wasm");
@@ -44,7 +41,6 @@ async function getEngine(config: RenderConfig) {
     }
   }
 
-  // 2. Create Engine Singleton
   if (!engineInstance) {
     engineInstance = UbeEngine.new();
 
@@ -92,6 +88,34 @@ export function Sequence(props: { from: number; children: () => SceneNode }): Sc
   return result;
 }
 
+function accumulateBuffer(acc: Float32Array, buffer: Uint8Array) {
+    for (let i = 0; i < buffer.length; i++) {
+        acc[i] += buffer[i];
+    }
+}
+
+function averageBuffer(acc: Float32Array, count: number): Uint8Array {
+    const result = new Uint8Array(acc.length);
+    for (let i = 0; i < acc.length; i++) {
+        result[i] = acc[i] / count;
+    }
+    return result;
+}
+
+// Internal renderer that doesn't handle accumulation, just raw frame output
+async function renderRawFrame<T>(
+    engine: any,
+    sceneComponent: (props: T) => SceneNode,
+    config: RenderConfig,
+    frame: number,
+    props: T
+): Promise<Uint8Array> {
+    globalThis._ubevid_frame = frame;
+    globalThis._ubevid_offset = 0;
+    const sceneGraph = sceneComponent(props);
+    return engine.render(JSON.stringify(sceneGraph), Math.floor(config.width), Math.floor(config.height));
+}
+
 export async function renderSingleFrame<T>(
   sceneComponent: (props: T) => SceneNode,
   config: RenderConfig,
@@ -99,10 +123,32 @@ export async function renderSingleFrame<T>(
   props: T
 ): Promise<Uint8Array> {
   const engine = await getEngine(config);
-  globalThis._ubevid_frame = frame;
-  globalThis._ubevid_offset = 0;
-  const sceneGraph = sceneComponent(props);
-  return engine.render(JSON.stringify(sceneGraph), Math.floor(config.width), Math.floor(config.height));
+  const samples = config.motionBlurSamples || 0;
+
+  if (samples <= 1) {
+      return renderRawFrame(engine, sceneComponent, config, frame, props);
+  }
+
+  // Motion Blur Logic
+  const shutterAngle = config.shutterAngle || 180;
+  const exposureDuration = shutterAngle / 360; // e.g. 0.5 frames
+  const timeStep = exposureDuration / samples;
+  
+  // Accumulator (Float32 to prevent overflow during summing)
+  // We allocate this once per frame call, effectively.
+  const bufferSize = Math.floor(config.width) * Math.floor(config.height) * 4;
+  const accumulation = new Float32Array(bufferSize);
+
+  // Center the blur window around the frame, or start at frame? 
+  // Standard is usually starting at frame for "forward" accumulation or centered.
+  // Let's do simple forward accumulation starting at 'frame'.
+  for (let i = 0; i < samples; i++) {
+      const t = frame + (i * timeStep);
+      const subBuffer = await renderRawFrame(engine, sceneComponent, config, t, props);
+      accumulateBuffer(accumulation, subBuffer);
+  }
+
+  return averageBuffer(accumulation, samples);
 }
 
 export async function render<T>(
@@ -116,9 +162,12 @@ export async function render<T>(
   const engine = await getEngine(config);
 
   console.log(`🎬 Ubevid: Rendering ${totalFrames} frames...`);
+  if (config.motionBlurSamples) {
+      console.log(`   💨 Motion Blur Enabled: ${config.motionBlurSamples} samples, ${config.shutterAngle || 180}° shutter`);
+  }
+
   const ffmpegArgs = ["-y", "-f", "rawvideo", "-pix_fmt", "rgba", "-s", `${width}x${height}`, "-r", `${fps}`, "-i", "-"];
   if (config.audio) {
-    // If audio exists, input it and map stream 1:a to output
     ffmpegArgs.push("-i", config.audio, "-map", "0:v", "-map", "1:a", "-c:a", "aac", "-shortest");
   }
   ffmpegArgs.push("-c:v", "libx264", "-preset", "ultrafast", "-pix_fmt", "yuv420p", outputFile);
@@ -127,10 +176,10 @@ export async function render<T>(
   const startTime = Date.now();
 
   for (let i = 0; i < totalFrames; i++) {
-    globalThis._ubevid_frame = i;
-    globalThis._ubevid_offset = 0;
-    const pixelBuffer = engine.render(JSON.stringify(sceneComponent(props)), width, height) as Uint8Array;
+    // Reuse renderSingleFrame logic to handle MB
+    const pixelBuffer = await renderSingleFrame(sceneComponent, config, i, props);
     ffmpeg.stdin.write(pixelBuffer);
+    
     if (i % 10 === 0 || i === totalFrames - 1) {
       process.stdout.write(`\r🚀 Rendering: ${Math.round((i / totalFrames) * 100)}% `);
     }

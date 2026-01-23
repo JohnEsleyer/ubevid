@@ -23,12 +23,14 @@ function TextLayoutDemo() {
       {
         tag: "view",
         style: {
-          width: widthAnim, // Animating container width forces re-wrap
+          width: widthAnim,
           backgroundColor: "#222",
           padding: 40,
           borderRadius: 20,
           borderColor: "#444",
-          borderWidth: 2
+          borderWidth: 2,
+          // IMPORTANT: Column layout ensures text nodes stack vertically instead of overlapping
+          flexDirection: "column"
         },
         children: [
           {
@@ -50,7 +52,7 @@ function TextLayoutDemo() {
               color: "#ccc",
               fontSize: 32,
               fontFamily: "Regular",
-              textAlign: "left", // Try "center" or "right"
+              textAlign: "left",
               lineHeight: 48
             }
           }

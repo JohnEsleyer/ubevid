@@ -2,10 +2,12 @@ use wasm_bindgen::prelude::*;
 use tiny_skia::{Pixmap, Paint, Transform, Color, PixmapPaint, PathBuilder, FillRule, FilterQuality, LinearGradient, RadialGradient, Point, SpreadMode, GradientStop, Mask, Stroke, LineCap, LineJoin, StrokeDash};
 use serde::{Deserialize, Serialize};
 use taffy::prelude::*;
+use taffy::node::MeasureFunc; // Fix: Import MeasureFunc explicitly
 use fontdue::{Font, FontSettings};
 use std::collections::HashMap;
 use svgtypes::PathParser;
 use image::{ImageBuffer, Rgba};
+use std::sync::Arc;
 
 #[wasm_bindgen]
 extern "C" {
@@ -126,6 +128,44 @@ fn parse_color(hex: &str) -> Color {
     Color::from_rgba8(r, g, b, a)
 }
 
+fn compute_text_lines(
+    font: &Font, 
+    text: &str, 
+    font_size: f32, 
+    letter_spacing: f32, 
+    max_width: Option<f32>
+) -> Vec<TextLine> {
+    let mut lines: Vec<TextLine> = Vec::new();
+    let wrap_width = max_width.unwrap_or(f32::MAX);
+
+    for raw_line in text.lines() {
+        let mut current_line = TextLine { chars: vec![], width: 0.0 };
+        for (i, word) in raw_line.split(' ').enumerate() {
+            let word_with_space = if i == 0 { word.to_string() } else { format!(" {}", word) };
+            let mut ww = 0.0;
+            let mut wc = vec![];
+
+            for c in word_with_space.chars() {
+                let adv = font.metrics(c, font_size).advance_width + letter_spacing;
+                wc.push((c, adv));
+                ww += adv;
+            }
+
+            if current_line.width + ww > wrap_width && !current_line.chars.is_empty() {
+                lines.push(current_line);
+                let trimmed: Vec<(char, f32)> = wc.into_iter().skip(if i > 0 { 1 } else { 0 }).collect();
+                let tw: f32 = trimmed.iter().map(|(_, a)| a).sum();
+                current_line = TextLine { chars: trimmed, width: tw };
+            } else {
+                current_line.chars.extend(wc);
+                current_line.width += ww;
+            }
+        }
+        lines.push(current_line);
+    }
+    lines
+}
+
 fn apply_image_filters(pixmap: &mut Pixmap, style: &StyleConfig) {
     let gs = style.grayscale.unwrap_or(0.0).clamp(0.0, 1.0);
     let br = style.brightness.unwrap_or(1.0).max(0.0);
@@ -138,7 +178,6 @@ fn apply_image_filters(pixmap: &mut Pixmap, style: &StyleConfig) {
         for i in (0..data.len()).step_by(4) {
             let alpha = data[i+3];
             if alpha == 0 { continue; }
-
             let a_f = alpha as f32 / 255.0;
             let mut r = (data[i] as f32 / 255.0) / a_f;
             let mut g = (data[i+1] as f32 / 255.0) / a_f;
@@ -180,7 +219,7 @@ fn apply_image_filters(pixmap: &mut Pixmap, style: &StyleConfig) {
 
 #[wasm_bindgen]
 pub struct UbeEngine {
-    fonts: HashMap<String, Font>,
+    fonts: HashMap<String, Arc<Font>>,
     assets: HashMap<String, Pixmap>, 
 }
 
@@ -192,7 +231,7 @@ impl UbeEngine {
 
     pub fn load_font(&mut self, name: &str, data: &[u8]) -> Result<(), JsValue> {
         let font = Font::from_bytes(data, FontSettings::default()).map_err(|e| JsValue::from_str(e))?;
-        self.fonts.insert(name.to_string(), font);
+        self.fonts.insert(name.to_string(), Arc::new(font));
         Ok(())
     }
 
@@ -219,7 +258,7 @@ impl UbeEngine {
         let root_node: SceneNode = serde_json::from_str(json_input).unwrap();
         let mut taffy = Taffy::new();
 
-        fn build_taffy(taffy: &mut Taffy, node: &SceneNode, assets: &HashMap<String, Pixmap>) -> Node {
+        fn build_taffy(taffy: &mut Taffy, node: &SceneNode, assets: &HashMap<String, Pixmap>, fonts: &HashMap<String, Arc<Font>>) -> Node {
             let mut w = node.style.width.map(Dimension::Points).unwrap_or(Dimension::Auto);
             let mut h = node.style.height.map(Dimension::Points).unwrap_or(Dimension::Auto);
 
@@ -235,26 +274,11 @@ impl UbeEngine {
             let style = Style {
                 size: Size { width: w, height: h },
                 aspect_ratio: node.style.aspectRatio,
-                position: match node.style.position.as_deref() {
-                    Some("absolute") => Position::Absolute,
-                    _ => Position::Relative,
-                },
+                position: match node.style.position.as_deref() { Some("absolute") => Position::Absolute, _ => Position::Relative },
                 flex_grow: node.style.flex.unwrap_or(0.0),
-                flex_direction: match node.style.flexDirection.as_deref() {
-                    Some("column") => FlexDirection::Column,
-                    _ => FlexDirection::Row,
-                },
-                justify_content: Some(match node.style.justifyContent.as_deref() {
-                    Some("center") => JustifyContent::Center,
-                    Some("spaceBetween") => JustifyContent::SpaceBetween,
-                    Some("flexEnd") => JustifyContent::FlexEnd,
-                    _ => JustifyContent::FlexStart,
-                }),
-                align_items: Some(match node.style.alignItems.as_deref() {
-                    Some("center") => AlignItems::Center,
-                    Some("flexEnd") => AlignItems::FlexEnd,
-                    _ => AlignItems::FlexStart,
-                }),
+                flex_direction: match node.style.flexDirection.as_deref() { Some("column") => FlexDirection::Column, _ => FlexDirection::Row },
+                justify_content: Some(match node.style.justifyContent.as_deref() { Some("center") => JustifyContent::Center, Some("spaceBetween") => JustifyContent::SpaceBetween, Some("flexEnd") => JustifyContent::FlexEnd, _ => JustifyContent::FlexStart }),
+                align_items: Some(match node.style.alignItems.as_deref() { Some("center") => AlignItems::Center, Some("flexEnd") => AlignItems::FlexEnd, _ => AlignItems::FlexStart }),
                 padding: Rect {
                     left: LengthPercentage::Points(node.style.padding.unwrap_or(0.0)),
                     right: LengthPercentage::Points(node.style.padding.unwrap_or(0.0)),
@@ -276,14 +300,41 @@ impl UbeEngine {
                 ..Default::default()
             };
 
+            if let Some(text_content) = &node.text {
+                let font_name = node.style.fontFamily.as_deref().unwrap_or("default");
+                let font_opt = fonts.get(font_name).or_else(|| fonts.values().next()).cloned();
+                
+                if let Some(font) = font_opt {
+                    let text_content = text_content.clone();
+                    let font_size = node.style.fontSize.unwrap_or(32.0);
+                    let letter_spacing = node.style.letterSpacing.unwrap_or(0.0);
+                    let line_height = node.style.lineHeight.unwrap_or(font_size * 1.2);
+
+                    return taffy.new_leaf_with_measure(style, MeasureFunc::Boxed(Box::new(move |known_dims, available_space| {
+                        let max_width = match available_space.width {
+                            AvailableSpace::Definite(px) => Some(px),
+                            AvailableSpace::MinContent => Some(0.0),
+                            AvailableSpace::MaxContent => None,
+                        };
+
+                        let lines = compute_text_lines(&font, &text_content, font_size, letter_spacing, max_width);
+                        
+                        let width = lines.iter().map(|l| l.width).fold(0.0, f32::max);
+                        let height = lines.len() as f32 * line_height;
+
+                        Size { width, height }
+                    }))).unwrap();
+                }
+            }
+
             let mut child_ids = vec![];
             if let Some(children) = &node.children {
-                for child in children { child_ids.push(build_taffy(taffy, child, assets)); }
+                for child in children { child_ids.push(build_taffy(taffy, child, assets, fonts)); }
             }
             taffy.new_with_children(style, &child_ids).unwrap()
         }
 
-        let root = build_taffy(&mut taffy, &root_node, &self.assets);
+        let root = build_taffy(&mut taffy, &root_node, &self.assets, &self.fonts);
         taffy.compute_layout(root, Size { 
             width: AvailableSpace::Definite(width as f32), 
             height: AvailableSpace::Definite(height as f32) 
@@ -307,7 +358,6 @@ impl UbeEngine {
             let w = layout.size.width;
             let h = layout.size.height;
 
-            // FIX: Allow rendering if node has text or is a path, even if layout size is 0
             if (w <= 0.0 || h <= 0.0) && node.text.is_none() && node.d.is_none() { return; }
 
             let mut transform = Transform::from_translate(x, y);
@@ -321,60 +371,37 @@ impl UbeEngine {
             }
 
             let current_opacity = parent_opacity * node.style.opacity.unwrap_or(1.0);
+            
+            // Fix: Define is_clipped in draw scope
+            let is_clipped = node.style.overflow.as_deref() == Some("hidden");
 
-            // Path construction
+            // Path construction (re-used for clipping and drawing)
             let path = if node.tag == "path" && node.d.is_some() {
                 let mut pb = PathBuilder::new();
                 let mut current_x = 0.0;
                 let mut current_y = 0.0;
                 for segment in PathParser::from(node.d.as_ref().unwrap().as_str()) {
-                     match segment {
-                        Ok(svgtypes::PathSegment::MoveTo { abs, x, y }) => { 
-                            let dx = if abs { x as f32 } else { current_x + x as f32 };
-                            let dy = if abs { y as f32 } else { current_y + y as f32 };
-                            pb.move_to(dx, dy); current_x = dx; current_y = dy;
-                        },
-                        Ok(svgtypes::PathSegment::LineTo { abs, x, y }) => { 
-                            let dx = if abs { x as f32 } else { current_x + x as f32 };
-                            let dy = if abs { y as f32 } else { current_y + y as f32 };
-                            pb.line_to(dx, dy); current_x = dx; current_y = dy;
-                        },
-                        Ok(svgtypes::PathSegment::CurveTo { abs, x1, y1, x2, y2, x, y }) => { 
-                            let cx1 = if abs { x1 as f32 } else { current_x + x1 as f32 };
-                            let cy1 = if abs { y1 as f32 } else { current_y + y1 as f32 };
-                            let cx2 = if abs { x2 as f32 } else { current_x + x2 as f32 };
-                            let cy2 = if abs { y2 as f32 } else { current_y + y2 as f32 };
-                            let dx = if abs { x as f32 } else { current_x + x as f32 };
-                            let dy = if abs { y as f32 } else { current_y + y as f32 };
-                            pb.cubic_to(cx1, cy1, cx2, cy2, dx, dy); current_x = dx; current_y = dy;
-                        },
-                        Ok(svgtypes::PathSegment::Quadratic { abs, x1, y1, x, y }) => { 
-                            let cx1 = if abs { x1 as f32 } else { current_x + x1 as f32 };
-                            let cy1 = if abs { y1 as f32 } else { current_y + y1 as f32 };
-                            let dx = if abs { x as f32 } else { current_x + x as f32 };
-                            let dy = if abs { y as f32 } else { current_y + y as f32 };
-                            pb.quad_to(cx1, cy1, dx, dy); current_x = dx; current_y = dy;
-                        },
-                        Ok(svgtypes::PathSegment::ClosePath { .. }) => { pb.close(); },
-                        _ => {}
+                    match segment {
+                         Ok(svgtypes::PathSegment::MoveTo { abs, x, y }) => { let dx = if abs { x as f32 } else { current_x + x as f32 }; let dy = if abs { y as f32 } else { current_y + y as f32 }; pb.move_to(dx, dy); current_x = dx; current_y = dy; },
+                         Ok(svgtypes::PathSegment::LineTo { abs, x, y }) => { let dx = if abs { x as f32 } else { current_x + x as f32 }; let dy = if abs { y as f32 } else { current_y + y as f32 }; pb.line_to(dx, dy); current_x = dx; current_y = dy; },
+                         Ok(svgtypes::PathSegment::CurveTo { abs, x1, y1, x2, y2, x, y }) => { let cx1 = if abs { x1 as f32 } else { current_x + x1 as f32 }; let cy1 = if abs { y1 as f32 } else { current_y + y1 as f32 }; let cx2 = if abs { x2 as f32 } else { current_x + x2 as f32 }; let cy2 = if abs { y2 as f32 } else { current_y + y2 as f32 }; let dx = if abs { x as f32 } else { current_x + x as f32 }; let dy = if abs { y as f32 } else { current_y + y as f32 }; pb.cubic_to(cx1, cy1, cx2, cy2, dx, dy); current_x = dx; current_y = dy; },
+                         Ok(svgtypes::PathSegment::Quadratic { abs, x1, y1, x, y }) => { let cx1 = if abs { x1 as f32 } else { current_x + x1 as f32 }; let cy1 = if abs { y1 as f32 } else { current_y + y1 as f32 }; let dx = if abs { x as f32 } else { current_x + x as f32 }; let dy = if abs { y as f32 } else { current_y + y as f32 }; pb.quad_to(cx1, cy1, dx, dy); current_x = dx; current_y = dy; },
+                         Ok(svgtypes::PathSegment::ClosePath { .. }) => { pb.close(); },
+                         _ => {}
                     }
                 }
                 pb.finish().unwrap_or_else(|| PathBuilder::from_rect(tiny_skia::Rect::from_xywh(0.0,0.0,w,h).unwrap()))
             } else {
-                 let mut pb = PathBuilder::new();
+                let mut pb = PathBuilder::new();
                 let tl = node.style.borderTopLeftRadius.or(node.style.borderRadius).unwrap_or(0.0).min(w/2.0).min(h/2.0);
                 let tr = node.style.borderTopRightRadius.or(node.style.borderRadius).unwrap_or(0.0).min(w/2.0).min(h/2.0);
                 let br = node.style.borderBottomRightRadius.or(node.style.borderRadius).unwrap_or(0.0).min(w/2.0).min(h/2.0);
                 let bl = node.style.borderBottomLeftRadius.or(node.style.borderRadius).unwrap_or(0.0).min(w/2.0).min(h/2.0);
-                pb.move_to(tl, 0.0); pb.line_to(w - tr, 0.0); pb.quad_to(w, 0.0, w, tr);
-                pb.line_to(w, h - br); pb.quad_to(w, h, w - br, h);
-                pb.line_to(bl, h); pb.quad_to(0.0, h, 0.0, h - bl);
-                pb.line_to(0.0, tl); pb.quad_to(0.0, 0.0, tl, 0.0); pb.close();
+                pb.move_to(tl, 0.0); pb.line_to(w - tr, 0.0); pb.quad_to(w, 0.0, w, tr); pb.line_to(w, h - br); pb.quad_to(w, h, w - br, h); pb.line_to(bl, h); pb.quad_to(0.0, h, 0.0, h - bl); pb.line_to(0.0, tl); pb.quad_to(0.0, 0.0, tl, 0.0); pb.close();
                 pb.finish().unwrap()
             };
 
-            let is_clipped = node.style.overflow.as_deref() == Some("hidden");
-
+            // Shadow
             if let Some(sc) = &node.style.shadowColor {
                 let mut shadow_paint = Paint::default();
                 let mut color = parse_color(sc);
@@ -385,6 +412,7 @@ impl UbeEngine {
                 pixmap.fill_path(&path, &shadow_paint, FillRule::Winding, shadow_transform, None);
             }
 
+            // Fill
             let mut fill_paint = Paint::default();
             let mut has_fill = false;
             if let Some(grad) = &node.style.backgroundGradient {
@@ -418,6 +446,7 @@ impl UbeEngine {
             }
             if has_fill { pixmap.fill_path(&path, &fill_paint, FillRule::Winding, transform, None); }
 
+            // Stroke
             if let Some(bw) = node.style.borderWidth {
                  if bw > 0.0 {
                     if let Some(bc) = &node.style.borderColor {
@@ -437,33 +466,23 @@ impl UbeEngine {
                 }
             }
 
+            // Image
             if node.tag == "image" {
                 if let Some(src) = &node.src {
                     if let Some(img_pixmap) = engine.assets.get(src) {
-                        let mut img_paint = PixmapPaint::default();
-                        img_paint.opacity = current_opacity;
-                        img_paint.quality = FilterQuality::Bilinear;
-                        let img_w = img_pixmap.width() as f32;
-                        let img_h = img_pixmap.height() as f32;
+                        let mut img_paint = PixmapPaint::default(); img_paint.opacity = current_opacity; img_paint.quality = FilterQuality::Bilinear;
+                        let img_w = img_pixmap.width() as f32; let img_h = img_pixmap.height() as f32;
                         let fit = node.style.objectFit.as_deref().unwrap_or("fill");
-                        let (sx, sy, tx, ty) = match fit {
-                            "cover" => { let s = (w / img_w).max(h / img_h); (s, s, (w - img_w * s) / 2.0, (h - img_h * s) / 2.0) },
-                            "contain" => { let s = (w / img_w).min(h / img_h); (s, s, (w - img_w * s) / 2.0, (h - img_h * s) / 2.0) },
-                            _ => (w / img_w, h / img_h, 0.0, 0.0),
-                        };
+                        let (sx, sy, tx, ty) = match fit { "cover" => { let s = (w / img_w).max(h / img_h); (s, s, (w - img_w * s) / 2.0, (h - img_h * s) / 2.0) }, "contain" => { let s = (w / img_w).min(h / img_h); (s, s, (w - img_w * s) / 2.0, (h - img_h * s) / 2.0) }, _ => (w / img_w, h / img_h, 0.0, 0.0) };
                         let img_transform = transform.pre_translate(tx, ty).pre_scale(sx, sy);
                         let has_filters = node.style.grayscale.is_some() || node.style.brightness.is_some() || node.style.contrast.is_some() || node.style.saturation.is_some() || node.style.blur.is_some();
-                        if has_filters {
-                            let mut filtered = img_pixmap.clone();
-                            apply_image_filters(&mut filtered, &node.style);
-                            pixmap.draw_pixmap(0, 0, filtered.as_ref(), &img_paint, img_transform, None);
-                        } else {
-                            pixmap.draw_pixmap(0, 0, img_pixmap.as_ref(), &img_paint, img_transform, None);
-                        }
+                        if has_filters { let mut filtered = img_pixmap.clone(); apply_image_filters(&mut filtered, &node.style); pixmap.draw_pixmap(0, 0, filtered.as_ref(), &img_paint, img_transform, None); } 
+                        else { pixmap.draw_pixmap(0, 0, img_pixmap.as_ref(), &img_paint, img_transform, None); }
                     }
                 }
             }
 
+            // Text
             if let Some(text_content) = &node.text {
                 let font_name = node.style.fontFamily.as_deref().unwrap_or("default");
                 let font_opt = engine.fonts.get(font_name).or_else(|| engine.fonts.values().next());
@@ -475,38 +494,10 @@ impl UbeEngine {
                     let letter_spacing = node.style.letterSpacing.unwrap_or(0.0);
                     let align = node.style.textAlign.as_deref().unwrap_or("left");
 
-                    let mut lines: Vec<TextLine> = Vec::new();
-
-                    for raw_line in text_content.lines() {
-                        let mut current_line = TextLine { chars: vec![], width: 0.0 };
-                        
-                        for (i, word) in raw_line.split(' ').enumerate() {
-                            let word_with_space = if i == 0 { word.to_string() } else { format!(" {}", word) };
-                            let mut ww = 0.0;
-                            let mut wc = vec![];
-
-                            for c in word_with_space.chars() {
-                                let adv = font.metrics(c, size).advance_width + letter_spacing;
-                                wc.push((c, adv));
-                                ww += adv;
-                            }
-
-                            // Use calculated width 'w' from layout. If w is 0 (layout unknown), 
-                            // we treat it as infinite (no wrap) unless wrapping is desired.
-                            // But usually Taffy collapsing w to 0 means we shouldn't rely on it for wrapping if it's 0.
-                            // Here we only wrap if w > 0.
-                            if w > 0.0 && current_line.width + ww > w && !current_line.chars.is_empty() {
-                                lines.push(current_line);
-                                let trimmed: Vec<(char, f32)> = wc.into_iter().skip(if i > 0 { 1 } else { 0 }).collect();
-                                let tw: f32 = trimmed.iter().map(|(_, a)| a).sum();
-                                current_line = TextLine { chars: trimmed, width: tw };
-                            } else {
-                                current_line.chars.extend(wc);
-                                current_line.width += ww;
-                            }
-                        }
-                        lines.push(current_line);
-                    }
+                    // Use Layout Width for wrapping if available, otherwise infinite
+                    let wrap_width = if w > 0.0 { Some(w) } else { None };
+                    
+                    let lines = compute_text_lines(font, text_content, size, letter_spacing, wrap_width);
 
                     for (li, line) in lines.iter().enumerate() {
                         let ly = li as f32 * lh;
@@ -540,6 +531,7 @@ impl UbeEngine {
                 let child_ids = taffy.children(layout_id).unwrap();
                 let mut paired: Vec<_> = children.iter().zip(child_ids.iter()).collect();
                 paired.sort_by_key(|(child, _)| child.style.zIndex.unwrap_or(0));
+                
                 if is_clipped {
                     let mut mask = Mask::new(pixmap.width(), pixmap.height()).unwrap();
                     mask.fill_path(&path, FillRule::Winding, true, transform);

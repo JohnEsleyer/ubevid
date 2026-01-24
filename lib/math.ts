@@ -1,3 +1,5 @@
+import { Noise } from "./noise.js";
+
 export class Random {
   private seed: number;
   constructor(seed: number = 12345) { this.seed = seed; }
@@ -13,9 +15,11 @@ export class Random {
 }
 
 let _globalRandom = new Random(12345);
+let _globalNoise = new Noise(12345);
 
 export function setSeed(seed: number) { 
   _globalRandom = new Random(seed); 
+  _globalNoise = new Noise(seed);
 }
 
 export function random(): number { 
@@ -24,6 +28,14 @@ export function random(): number {
 
 export function randomRange(min: number, max: number) { 
   return _globalRandom.range(min, max); 
+}
+
+/**
+ * Generates Simplex/Perlin-like noise in 3D (x, y, time).
+ * Returns a value roughly between -1.0 and 1.0.
+ */
+export function noise(x: number, y: number = 0, z: number = 0): number {
+  return _globalNoise.perlin3(x, y, z);
 }
 
 /**

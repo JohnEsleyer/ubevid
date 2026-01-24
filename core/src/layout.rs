@@ -55,12 +55,12 @@ pub fn build_taffy(
         ..Default::default()
     };
 
-    if let Some(text_content) = &node.text {
+    if let Some(text_content_ref) = &node.text {
         let font_name = node.style.fontFamily.as_deref().unwrap_or("default");
         let font_opt = fonts.get(font_name).or_else(|| fonts.values().next()).cloned();
         
         if let Some(font) = font_opt {
-            let text_content = text_content.clone();
+            let text_content = String::from(text_content_ref);
             let font_size = node.style.fontSize.unwrap_or(32.0);
             let letter_spacing = node.style.letterSpacing.unwrap_or(0.0);
             let line_height = node.style.lineHeight.unwrap_or(font_size * 1.2);

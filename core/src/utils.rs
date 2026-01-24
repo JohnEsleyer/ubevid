@@ -1,4 +1,4 @@
-use tiny_skia::Color;
+use tiny_skia::{Color, BlendMode};
 
 pub fn parse_color(hex: &str) -> Color {
     let hex = hex.trim_start_matches('#');
@@ -14,4 +14,28 @@ pub fn parse_color(hex: &str) -> Color {
         _ => (255, 255, 255, 255)
     };
     Color::from_rgba8(r, g, b, a)
+}
+
+pub fn parse_blend_mode(mode: &str) -> BlendMode {
+    match mode {
+        "sourceOver" => BlendMode::SourceOver,
+        "screen" => BlendMode::Screen,
+        "overlay" => BlendMode::Overlay,
+        "darken" => BlendMode::Darken,
+        "lighten" => BlendMode::Lighten,
+        "colorDodge" => BlendMode::ColorDodge,
+        "colorBurn" => BlendMode::ColorBurn,
+        "hardLight" => BlendMode::HardLight,
+        "softLight" => BlendMode::SoftLight,
+        "difference" => BlendMode::Difference,
+        "exclusion" => BlendMode::Exclusion,
+        "multiply" => BlendMode::Multiply,
+        "hue" => BlendMode::Hue,
+        "saturation" => BlendMode::Saturation,
+        "color" => BlendMode::Color,
+        "luminosity" => BlendMode::Luminosity,
+        "plus" => BlendMode::Plus,
+        "xor" => BlendMode::Xor,
+        _ => BlendMode::SourceOver,
+    }
 }

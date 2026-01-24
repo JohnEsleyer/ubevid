@@ -1,3 +1,4 @@
+
 use serde::{Deserialize, Serialize};
 
 #[derive(Deserialize, Serialize, Debug, Clone)]
@@ -45,6 +46,7 @@ pub struct StyleConfig {
     pub borderColor: Option<String>,
     pub borderWidth: Option<f32>,
     pub opacity: Option<f32>,
+    pub blendMode: Option<String>,
     
     // Strokes
     pub strokeLineCap: Option<String>,
@@ -81,6 +83,8 @@ pub struct StyleConfig {
     // Transform
     pub rotate: Option<f32>,
     pub scale: Option<f32>,
+    pub skewX: Option<f32>,
+    pub skewY: Option<f32>,
 }
 
 #[derive(Deserialize, Serialize, Debug, Clone)]

@@ -39,6 +39,15 @@ export interface StyleConfig {
   borderWidth?: number;
   opacity?: number;
   overflow?: "visible" | "hidden";
+  
+  /**
+   * Blend mode for the node.
+   * Supported: "sourceOver", "screen", "multiply", "overlay", "darken", "lighten", "colorDodge", 
+   * "colorBurn", "hardLight", "softLight", "difference", "exclusion", "hue", "saturation", "color", "luminosity".
+   */
+  blendMode?: "sourceOver" | "screen" | "multiply" | "overlay" | "darken" | "lighten" | 
+              "colorDodge" | "colorBurn" | "hardLight" | "softLight" | "difference" | "exclusion" | 
+              "hue" | "saturation" | "color" | "luminosity" | "plus" | "xor";
 
   // Strokes
   strokeLineCap?: "butt" | "round" | "square";

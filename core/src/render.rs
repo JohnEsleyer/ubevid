@@ -4,7 +4,7 @@ use image::{ImageBuffer, Rgba};
 use svgtypes::PathParser;
 
 use crate::types::{SceneNode, StyleConfig};
-use crate::utils::parse_color;
+use crate::utils::{parse_color, parse_blend_mode};
 use crate::engine::EngineCore;
 use crate::text::compute_text_lines;
 
@@ -78,7 +78,6 @@ fn apply_image_filters(pixmap: &mut Pixmap, style: &StyleConfig) {
     if blur_radius > 0.0 {
         let w = pixmap.width();
         let h = pixmap.height();
-        // Clone to image buffer for efficient processing
         if let Some(img_buffer) = ImageBuffer::<Rgba<u8>, Vec<u8>>::from_raw(w, h, pixmap.data().to_vec()) {
             let blurred = image::imageops::blur(&img_buffer, blur_radius);
             let data = pixmap.data_mut();
@@ -106,24 +105,44 @@ pub fn draw_scene(
     if (w <= 0.0 || h <= 0.0) && node.text.is_none() && node.d.is_none() && node.tag != "circle" && node.tag != "ellipse" { return; }
 
     let mut transform = Transform::from_translate(x, y);
+    
+    // Transform Origin (Center by default)
+    let cx = w / 2.0; 
+    let cy = h / 2.0;
+
+    // Apply Transforms: Translate Center -> Skew -> Scale -> Rotate -> Translate Back
+    transform = transform.pre_translate(cx, cy);
+
     if let Some(r) = node.style.rotate {
-        let cx = w / 2.0; let cy = h / 2.0;
-        transform = transform.pre_translate(cx, cy).pre_rotate(r).pre_translate(-cx, -cy);
+        transform = transform.pre_rotate(r);
     }
-    if let Some(s) = node.style.scale {
-        let cx = w / 2.0; let cy = h / 2.0;
-        transform = transform.pre_translate(cx, cy).pre_scale(s, s).pre_translate(-cx, -cy);
+    
+    // Skew (in degrees)
+    if node.style.skewX.is_some() || node.style.skewY.is_some() {
+        let sx = node.style.skewX.unwrap_or(0.0).to_radians().tan();
+        let sy = node.style.skewY.unwrap_or(0.0).to_radians().tan();
+        // Transform::from_skew returns a Transform, not Option in this version of tiny-skia
+        let skew_mat = Transform::from_skew(sx, sy);
+        transform = transform.pre_concat(skew_mat);
     }
 
+    if let Some(s) = node.style.scale {
+        transform = transform.pre_scale(s, s);
+    }
+
+    transform = transform.pre_translate(-cx, -cy);
+
     let current_opacity = parent_opacity * node.style.opacity.unwrap_or(1.0);
+    let blend_mode = parse_blend_mode(node.style.blendMode.as_deref().unwrap_or("normal"));
     let is_clipped = node.style.overflow.as_deref() == Some("hidden");
 
     let path = if let Some(d) = &node.d {
         let mut pb = PathBuilder::new();
         let mut current_x = 0.0;
         let mut current_y = 0.0;
-        for segment in PathParser::from(d.as_str()) {
-            match segment {
+        let segments = PathParser::from(d.as_str());
+        for segment in segments {
+             match segment {
                  Ok(svgtypes::PathSegment::MoveTo { abs, x, y }) => { let dx = if abs { x as f32 } else { current_x + x as f32 }; let dy = if abs { y as f32 } else { current_y + y as f32 }; pb.move_to(dx, dy); current_x = dx; current_y = dy; },
                  Ok(svgtypes::PathSegment::LineTo { abs, x, y }) => { let dx = if abs { x as f32 } else { current_x + x as f32 }; let dy = if abs { y as f32 } else { current_y + y as f32 }; pb.line_to(dx, dy); current_x = dx; current_y = dy; },
                  Ok(svgtypes::PathSegment::CurveTo { abs, x1, y1, x2, y2, x, y }) => { let cx1 = if abs { x1 as f32 } else { current_x + x1 as f32 }; let cy1 = if abs { y1 as f32 } else { current_y + y1 as f32 }; let cx2 = if abs { x2 as f32 } else { current_x + x2 as f32 }; let cy2 = if abs { y2 as f32 } else { current_y + y2 as f32 }; let dx = if abs { x as f32 } else { current_x + x as f32 }; let dy = if abs { y as f32 } else { current_y + y as f32 }; pb.cubic_to(cx1, cy1, cx2, cy2, dx, dy); current_x = dx; current_y = dy; },
@@ -154,11 +173,7 @@ pub fn draw_scene(
             let fw = w.max(1.0);
             let fh = h.max(1.0);
             let mut pb = PathBuilder::new();
-            pb.move_to(0.0, 0.0);
-            pb.line_to(fw, 0.0);
-            pb.line_to(fw, fh);
-            pb.line_to(0.0, fh);
-            pb.close();
+            pb.move_to(0.0, 0.0); pb.line_to(fw, 0.0); pb.line_to(fw, fh); pb.line_to(0.0, fh); pb.close();
             pb.finish().unwrap()
         }
     };
@@ -170,13 +185,16 @@ pub fn draw_scene(
         let blur_alpha = (current_opacity * 0.3).min(1.0);
         color.set_alpha(color.alpha() * blur_alpha);
         shadow_paint.set_color(color);
+        shadow_paint.blend_mode = BlendMode::SourceOver; 
         let shadow_transform = transform.post_translate(node.style.shadowOffsetX.unwrap_or(10.0), node.style.shadowOffsetY.unwrap_or(10.0));
         pixmap.fill_path(&path, &shadow_paint, FillRule::Winding, shadow_transform, None);
     }
 
     // Fill
     let mut fill_paint = Paint::default();
+    fill_paint.blend_mode = blend_mode; // Apply blend mode to primitive
     let mut has_fill = false;
+    
     if let Some(grad) = &node.style.backgroundGradient {
         let mut stops = Vec::new();
         for i in 0..grad.colors.len() {
@@ -210,9 +228,10 @@ pub fn draw_scene(
 
     // Stroke
     if let Some(bw) = node.style.borderWidth {
-            if bw > 0.0 {
+        if bw > 0.0 {
             if let Some(bc) = &node.style.borderColor {
                 let mut stroke_paint = Paint::default();
+                stroke_paint.blend_mode = blend_mode; // Apply blend mode to stroke
                 let mut color = parse_color(bc);
                 color.set_alpha(color.alpha() * current_opacity);
                 stroke_paint.set_color(color);
@@ -221,7 +240,10 @@ pub fn draw_scene(
                 stroke.line_cap = match node.style.strokeLineCap.as_deref() { Some("round") => LineCap::Round, Some("square") => LineCap::Square, _ => LineCap::Butt };
                 stroke.line_join = match node.style.strokeLineJoin.as_deref() { Some("round") => LineJoin::Round, Some("bevel") => LineJoin::Bevel, _ => LineJoin::Miter };
                 if let Some(dash_array) = &node.style.strokeDashArray {
-                    if !dash_array.is_empty() { stroke.dash = StrokeDash::new(dash_array.clone(), node.style.strokeDashOffset.unwrap_or(0.0)); }
+                    let array: &Vec<f32> = dash_array; // Explicit type check hint
+                    if array.len() > 0 { 
+                        stroke.dash = StrokeDash::new(array.clone(), node.style.strokeDashOffset.unwrap_or(0.0)); 
+                    }
                 }
                 pixmap.stroke_path(&path, &stroke_paint, &stroke, transform, None);
             }
@@ -232,19 +254,17 @@ pub fn draw_scene(
     if node.tag == "image" {
         if let Some(src) = &node.src {
             if let Some(img_pixmap) = engine.assets.get(src) {
-                let mut img_paint = PixmapPaint::default(); img_paint.opacity = current_opacity; img_paint.quality = FilterQuality::Bilinear;
+                let mut img_paint = PixmapPaint::default(); 
+                img_paint.opacity = current_opacity; 
+                img_paint.quality = FilterQuality::Bilinear;
+                img_paint.blend_mode = blend_mode; // Apply blend mode to image
+
                 let img_w = img_pixmap.width() as f32; let img_h = img_pixmap.height() as f32;
                 let fit = node.style.objectFit.as_deref().unwrap_or("fill");
                 let (sx, sy, tx, ty) = match fit { "cover" => { let s = (w / img_w).max(h / img_h); (s, s, (w - img_w * s) / 2.0, (h - img_h * s) / 2.0) }, "contain" => { let s = (w / img_w).min(h / img_h); (s, s, (w - img_w * s) / 2.0, (h - img_h * s) / 2.0) }, _ => (w / img_w, h / img_h, 0.0, 0.0) };
                 let img_transform = transform.pre_translate(tx, ty).pre_scale(sx, sy);
                 
-                let has_filters = node.style.grayscale.is_some() || 
-                                  node.style.brightness.is_some() || 
-                                  node.style.contrast.is_some() || 
-                                  node.style.saturation.is_some() || 
-                                  node.style.invert.is_some() || 
-                                  node.style.sepia.is_some() ||
-                                  node.style.blur.is_some();
+                let has_filters = node.style.grayscale.is_some() || node.style.brightness.is_some() || node.style.contrast.is_some() || node.style.saturation.is_some() || node.style.invert.is_some() || node.style.sepia.is_some() || node.style.blur.is_some();
                                   
                 if has_filters { 
                     let mut filtered = img_pixmap.clone(); 
@@ -271,7 +291,6 @@ pub fn draw_scene(
             let align = node.style.textAlign.as_deref().unwrap_or("left");
 
             let wrap_width = if w > 0.0 { Some(w) } else { None };
-            
             let lines = compute_text_lines(font, text_content, size, letter_spacing, wrap_width);
 
             for (li, line) in lines.iter().enumerate() {
@@ -290,30 +309,24 @@ pub fn draw_scene(
                         let gw = metrics.width as u32;
                         let gh = metrics.height as u32;
                         let req_len = (gw * gh * 4) as usize;
-                        
                         let mut buffer = engine.scratch_buffer.borrow_mut();
-                        if buffer.len() < req_len {
-                            buffer.resize(req_len, 0);
-                        }
+                        if buffer.len() < req_len { buffer.resize(req_len, 0); }
                         
                         let dest_slice = &mut buffer[0..req_len];
-                        
                         for (i, alpha) in glyph.bitmap.iter().enumerate() {
                             let a_norm = (*alpha as f32 / 255.0) * current_opacity;
                             let r = (color.red() * 255.0 * a_norm) as u8;
                             let g = (color.green() * 255.0 * a_norm) as u8;
                             let b = (color.blue() * 255.0 * a_norm) as u8;
                             let a = (a_norm * 255.0) as u8;
-                            
-                            dest_slice[i*4] = r;
-                            dest_slice[i*4+1] = g;
-                            dest_slice[i*4+2] = b;
-                            dest_slice[i*4+3] = a;
+                            dest_slice[i*4] = r; dest_slice[i*4+1] = g; dest_slice[i*4+2] = b; dest_slice[i*4+3] = a;
                         }
 
                         if let Some(glyph_pixmap) = tiny_skia::PixmapRef::from_bytes(dest_slice, gw, gh) {
                             let cy = (ly + size - metrics.height as f32 - metrics.ymin as f32) as f32;
-                            pixmap.draw_pixmap(0, 0, glyph_pixmap, &PixmapPaint::default(), transform.post_translate(cx+metrics.xmin as f32, cy), None);
+                            let mut text_paint = PixmapPaint::default();
+                            text_paint.blend_mode = blend_mode;
+                            pixmap.draw_pixmap(0, 0, glyph_pixmap, &text_paint, transform.post_translate(cx+metrics.xmin as f32, cy), None);
                         }
                     }
                     cx += adv;
@@ -324,17 +337,24 @@ pub fn draw_scene(
 
     if let Some(children) = &node.children {
         let child_ids = taffy.children(layout_id).unwrap();
-        let mut paired: Vec<_> = children.iter().zip(child_ids.iter()).collect();
+        let mut paired: Vec<(&SceneNode, &Node)> = children.iter().zip(child_ids.iter()).collect();
         paired.sort_by_key(|(child, _)| child.style.zIndex.unwrap_or(0));
         
-        if is_clipped {
+        let needs_layer = is_clipped || blend_mode != BlendMode::SourceOver;
+
+        if needs_layer {
             let mut mask = Mask::new(pixmap.width(), pixmap.height()).unwrap();
             mask.fill_path(&path, FillRule::Winding, true, transform);
+            
             let mut layer = Pixmap::new(pixmap.width(), pixmap.height()).unwrap();
             for (child, &cid) in paired {
                 draw_scene(taffy, child, cid, &mut layer, engine, x, y, current_opacity);
             }
-            pixmap.draw_pixmap(0, 0, layer.as_ref(), &PixmapPaint::default(), Transform::identity(), Some(&mask));
+            
+            let mut layer_paint = PixmapPaint::default();
+            layer_paint.blend_mode = blend_mode; 
+            
+            pixmap.draw_pixmap(0, 0, layer.as_ref(), &layer_paint, Transform::identity(), Some(&mask));
         } else {
             for (child, &cid) in paired {
                 draw_scene(taffy, child, cid, pixmap, engine, x, y, current_opacity);

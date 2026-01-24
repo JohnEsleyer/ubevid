@@ -1,4 +1,3 @@
-
 mod types;
 mod utils;
 mod text;
@@ -36,6 +35,10 @@ impl UbeEngine {
     
     pub fn load_asset(&mut self, id: &str, data: &[u8]) -> Result<(), JsValue> {
         self.core.load_asset(id, data).map_err(|e| JsValue::from_str(&e))
+    }
+
+    pub fn load_asset_raw(&mut self, id: &str, data: &[u8], width: u32, height: u32) -> Result<(), JsValue> {
+        self.core.load_asset_raw(id, data, width, height).map_err(|e| JsValue::from_str(e.as_str()))
     }
 
     pub fn render(&self, json_input: &str, width: u32, height: u32) -> Vec<u8> {

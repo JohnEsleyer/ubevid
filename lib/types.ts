@@ -40,11 +40,6 @@ export interface StyleConfig {
   opacity?: number;
   overflow?: "visible" | "hidden";
   
-  /**
-   * Blend mode for the node.
-   * Supported: "sourceOver", "screen", "multiply", "overlay", "darken", "lighten", "colorDodge", 
-   * "colorBurn", "hardLight", "softLight", "difference", "exclusion", "hue", "saturation", "color", "luminosity".
-   */
   blendMode?: "sourceOver" | "screen" | "multiply" | "overlay" | "darken" | "lighten" | 
               "colorDodge" | "colorBurn" | "hardLight" | "softLight" | "difference" | "exclusion" | 
               "hue" | "saturation" | "color" | "luminosity" | "plus" | "xor";
@@ -84,6 +79,8 @@ export interface StyleConfig {
   // Transforms
   rotate?: number;
   scale?: number;
+  skewX?: number;
+  skewY?: number;
 }
 
 export interface SceneNode {
@@ -101,10 +98,10 @@ export interface RenderConfig {
   fps: number;
   duration: number;
   assets?: Record<string, string>;
+  videos?: Record<string, string>; // NEW: Video assets
   fonts?: Record<string, string>;
   audio?: string;
   
-  // Motion Blur
-  motionBlurSamples?: number; // e.g., 4, 8, 16. Default 0 (off)
-  shutterAngle?: number;      // 0 to 360. Default 180 (standard cinematic)
+  motionBlurSamples?: number;
+  shutterAngle?: number;
 }

@@ -102,35 +102,28 @@ pub fn draw_scene(
     let w = layout.size.width;
     let h = layout.size.height;
 
-    // Check if node is visible/renderable. 
-    // If it has 0 size, we normally skip, BUT if it has children, we must continue 
-    // because children might be overflow:visible (default) and positioned absolutely.
-    // We also must render if it has a path (d) or text or is a shape tag, even if layout says 0 size (though Taffy usually handles that).
     let has_children = node.children.as_ref().map_or(false, |c| !c.is_empty());
-    let is_renderable_primitive = node.text.is_some() || node.d.is_some() || node.tag == "circle" || node.tag == "ellipse";
+    let is_renderable_primitive = node.text.is_some() || node.d.is_some() || node.tag == "circle" || node.tag == "ellipse" || node.tag == "rect" || node.tag == "image";
     
+    // Skip if 0 size and not a container for overflow
     if (w <= 0.0 || h <= 0.0) && !has_children && !is_renderable_primitive { 
         return; 
     }
 
     let mut transform = Transform::from_translate(x, y);
     
-    // Transform Origin (Center by default)
     let cx = w / 2.0; 
     let cy = h / 2.0;
 
-    // Apply Transforms: Translate Center -> Skew -> Scale -> Rotate -> Translate Back
     transform = transform.pre_translate(cx, cy);
 
     if let Some(r) = node.style.rotate {
         transform = transform.pre_rotate(r);
     }
     
-    // Skew (in degrees)
     if node.style.skewX.is_some() || node.style.skewY.is_some() {
         let sx = node.style.skewX.unwrap_or(0.0).to_radians().tan();
         let sy = node.style.skewY.unwrap_or(0.0).to_radians().tan();
-        // Transform::from_skew returns a Transform, not Option in this version of tiny-skia
         let skew_mat = Transform::from_skew(sx, sy);
         transform = transform.pre_concat(skew_mat);
     }
@@ -154,6 +147,8 @@ pub fn draw_scene(
              match segment {
                  Ok(svgtypes::PathSegment::MoveTo { abs, x, y }) => { let dx = if abs { x as f32 } else { current_x + x as f32 }; let dy = if abs { y as f32 } else { current_y + y as f32 }; pb.move_to(dx, dy); current_x = dx; current_y = dy; },
                  Ok(svgtypes::PathSegment::LineTo { abs, x, y }) => { let dx = if abs { x as f32 } else { current_x + x as f32 }; let dy = if abs { y as f32 } else { current_y + y as f32 }; pb.line_to(dx, dy); current_x = dx; current_y = dy; },
+                 Ok(svgtypes::PathSegment::HorizontalLineTo { abs, x }) => { let dx = if abs { x as f32 } else { current_x + x as f32 }; pb.line_to(dx, current_y); current_x = dx; },
+                 Ok(svgtypes::PathSegment::VerticalLineTo { abs, y }) => { let dy = if abs { y as f32 } else { current_y + y as f32 }; pb.line_to(current_x, dy); current_y = dy; },
                  Ok(svgtypes::PathSegment::CurveTo { abs, x1, y1, x2, y2, x, y }) => { let cx1 = if abs { x1 as f32 } else { current_x + x1 as f32 }; let cy1 = if abs { y1 as f32 } else { current_y + y1 as f32 }; let cx2 = if abs { x2 as f32 } else { current_x + x2 as f32 }; let cy2 = if abs { y2 as f32 } else { current_y + y2 as f32 }; let dx = if abs { x as f32 } else { current_x + x as f32 }; let dy = if abs { y as f32 } else { current_y + y as f32 }; pb.cubic_to(cx1, cy1, cx2, cy2, dx, dy); current_x = dx; current_y = dy; },
                  Ok(svgtypes::PathSegment::Quadratic { abs, x1, y1, x, y }) => { let cx1 = if abs { x1 as f32 } else { current_x + x1 as f32 }; let cy1 = if abs { y1 as f32 } else { current_y + y1 as f32 }; let dx = if abs { x as f32 } else { current_x + x as f32 }; let dy = if abs { y as f32 } else { current_y + y as f32 }; pb.quad_to(cx1, cy1, dx, dy); current_x = dx; current_y = dy; },
                  Ok(svgtypes::PathSegment::ClosePath { .. }) => { pb.close(); },
@@ -163,26 +158,38 @@ pub fn draw_scene(
         pb.finish()
     } else if node.tag == "circle" || node.tag == "ellipse" {
         let mut pb = PathBuilder::new();
-        let rect = tiny_skia::Rect::from_xywh(0.0, 0.0, w, h).unwrap_or(tiny_skia::Rect::from_xywh(0.0,0.0,1.0,1.0).unwrap());
+        // Fallback to small rect if 0 size to avoid panic, though loop skips 0 size usually
+        let rect = tiny_skia::Rect::from_xywh(0.0, 0.0, w.max(0.001), h.max(0.001)).unwrap_or(tiny_skia::Rect::from_xywh(0.0,0.0,1.0,1.0).unwrap());
         pb.push_oval(rect);
         pb.finish()
     } else {
+        // Rectangle / View
         let mut pb = PathBuilder::new();
         let tl = node.style.borderTopLeftRadius.or(node.style.borderRadius).unwrap_or(0.0).min(w/2.0).min(h/2.0);
         let tr = node.style.borderTopRightRadius.or(node.style.borderRadius).unwrap_or(0.0).min(w/2.0).min(h/2.0);
         let br = node.style.borderBottomRightRadius.or(node.style.borderRadius).unwrap_or(0.0).min(w/2.0).min(h/2.0);
         let bl = node.style.borderBottomLeftRadius.or(node.style.borderRadius).unwrap_or(0.0).min(w/2.0).min(h/2.0);
-        pb.move_to(tl, 0.0); pb.line_to(w - tr, 0.0); pb.quad_to(w, 0.0, w, tr); pb.line_to(w, h - br); pb.quad_to(w, h, w - br, h); pb.line_to(bl, h); pb.quad_to(0.0, h, 0.0, h - bl); pb.line_to(0.0, tl); pb.quad_to(0.0, 0.0, tl, 0.0); pb.close();
+        
+        pb.move_to(tl, 0.0); 
+        pb.line_to(w - tr, 0.0); 
+        if tr > 0.0 { pb.quad_to(w, 0.0, w, tr); }
+        pb.line_to(w, h - br); 
+        if br > 0.0 { pb.quad_to(w, h, w - br, h); }
+        pb.line_to(bl, h); 
+        if bl > 0.0 { pb.quad_to(0.0, h, 0.0, h - bl); }
+        pb.line_to(0.0, tl); 
+        if tl > 0.0 { pb.quad_to(0.0, 0.0, tl, 0.0); }
+        pb.close();
+        
         pb.finish()
     };
     
+    // Default path if none generated (fallback)
     let path = match path {
         Some(p) => p,
         None => {
-            let fw = w.max(1.0);
-            let fh = h.max(1.0);
             let mut pb = PathBuilder::new();
-            pb.move_to(0.0, 0.0); pb.line_to(fw, 0.0); pb.line_to(fw, fh); pb.line_to(0.0, fh); pb.close();
+            pb.move_to(0.0, 0.0); pb.line_to(w, 0.0); pb.line_to(w, h); pb.line_to(0.0, h); pb.close();
             pb.finish().unwrap()
         }
     };
@@ -201,7 +208,7 @@ pub fn draw_scene(
 
     // Fill
     let mut fill_paint = Paint::default();
-    fill_paint.blend_mode = blend_mode; // Apply blend mode to primitive
+    fill_paint.blend_mode = blend_mode; 
     let mut has_fill = false;
     
     if let Some(grad) = &node.style.backgroundGradient {
@@ -240,7 +247,7 @@ pub fn draw_scene(
         if bw > 0.0 {
             if let Some(bc) = &node.style.borderColor {
                 let mut stroke_paint = Paint::default();
-                stroke_paint.blend_mode = blend_mode; // Apply blend mode to stroke
+                stroke_paint.blend_mode = blend_mode;
                 let mut color = parse_color(bc);
                 color.set_alpha(color.alpha() * current_opacity);
                 stroke_paint.set_color(color);
@@ -249,7 +256,7 @@ pub fn draw_scene(
                 stroke.line_cap = match node.style.strokeLineCap.as_deref() { Some("round") => LineCap::Round, Some("square") => LineCap::Square, _ => LineCap::Butt };
                 stroke.line_join = match node.style.strokeLineJoin.as_deref() { Some("round") => LineJoin::Round, Some("bevel") => LineJoin::Bevel, _ => LineJoin::Miter };
                 if let Some(dash_array) = &node.style.strokeDashArray {
-                    let array: &Vec<f32> = dash_array; // Explicit type check hint
+                    let array: &Vec<f32> = dash_array; 
                     if array.len() > 0 { 
                         stroke.dash = StrokeDash::new(array.clone(), node.style.strokeDashOffset.unwrap_or(0.0)); 
                     }
@@ -266,16 +273,32 @@ pub fn draw_scene(
                 let mut img_paint = PixmapPaint::default(); 
                 img_paint.opacity = current_opacity; 
                 img_paint.quality = FilterQuality::Bilinear;
-                img_paint.blend_mode = blend_mode; // Apply blend mode to image
+                img_paint.blend_mode = blend_mode;
 
-                let img_w = img_pixmap.width() as f32; let img_h = img_pixmap.height() as f32;
+                let img_w = img_pixmap.width() as f32; 
+                let img_h = img_pixmap.height() as f32;
+                
                 let fit = node.style.objectFit.as_deref().unwrap_or("fill");
-                let (sx, sy, tx, ty) = match fit { "cover" => { let s = (w / img_w).max(h / img_h); (s, s, (w - img_w * s) / 2.0, (h - img_h * s) / 2.0) }, "contain" => { let s = (w / img_w).min(h / img_h); (s, s, (w - img_w * s) / 2.0, (h - img_h * s) / 2.0) }, _ => (w / img_w, h / img_h, 0.0, 0.0) };
+                
+                // Calculate scale and position based on Object Fit
+                let (sx, sy, tx, ty) = match fit { 
+                    "cover" => { 
+                        let s = (w / img_w).max(h / img_h); 
+                        (s, s, (w - img_w * s) / 2.0, (h - img_h * s) / 2.0) 
+                    }, 
+                    "contain" => { 
+                        let s = (w / img_w).min(h / img_h); 
+                        (s, s, (w - img_w * s) / 2.0, (h - img_h * s) / 2.0) 
+                    }, 
+                    _ => (w / img_w, h / img_h, 0.0, 0.0) // Fill
+                };
+                
                 let img_transform = transform.pre_translate(tx, ty).pre_scale(sx, sy);
                 
                 let has_filters = node.style.grayscale.is_some() || node.style.brightness.is_some() || node.style.contrast.is_some() || node.style.saturation.is_some() || node.style.invert.is_some() || node.style.sepia.is_some() || node.style.blur.is_some();
                                   
                 if has_filters { 
+                    // Clone for filtering (expensive but necessary for non-destructive filters per instance)
                     let mut filtered = img_pixmap.clone(); 
                     apply_image_filters(&mut filtered, &node.style); 
                     pixmap.draw_pixmap(0, 0, filtered.as_ref(), &img_paint, img_transform, None); 
@@ -352,18 +375,19 @@ pub fn draw_scene(
         let needs_layer = is_clipped || blend_mode != BlendMode::SourceOver;
 
         if needs_layer {
-            let mut mask = Mask::new(pixmap.width(), pixmap.height()).unwrap();
-            mask.fill_path(&path, FillRule::Winding, true, transform);
-            
-            let mut layer = Pixmap::new(pixmap.width(), pixmap.height()).unwrap();
-            for (child, &cid) in paired {
-                draw_scene(taffy, child, cid, &mut layer, engine, x, y, current_opacity);
+            if let Some(mut mask) = Mask::new(pixmap.width(), pixmap.height()) {
+                 mask.fill_path(&path, FillRule::Winding, true, transform);
+                 
+                 let mut layer = Pixmap::new(pixmap.width(), pixmap.height()).unwrap();
+                 for (child, &cid) in paired {
+                     draw_scene(taffy, child, cid, &mut layer, engine, x, y, current_opacity);
+                 }
+                 
+                 let mut layer_paint = PixmapPaint::default();
+                 layer_paint.blend_mode = blend_mode; 
+                 
+                 pixmap.draw_pixmap(0, 0, layer.as_ref(), &layer_paint, Transform::identity(), Some(&mask));
             }
-            
-            let mut layer_paint = PixmapPaint::default();
-            layer_paint.blend_mode = blend_mode; 
-            
-            pixmap.draw_pixmap(0, 0, layer.as_ref(), &layer_paint, Transform::identity(), Some(&mask));
         } else {
             for (child, &cid) in paired {
                 draw_scene(taffy, child, cid, pixmap, engine, x, y, current_opacity);

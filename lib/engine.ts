@@ -1,8 +1,10 @@
+
 import init, { UbeEngine } from "../core/pkg/ubevid_core.js";
 import { readFile } from "fs/promises";
 import { join } from "path";
 import { spawn } from "bun";
 import { AudioAnalyzer } from "./audio.js";
+import { VideoManager } from "./video.js";
 import type { RenderConfig, SceneNode } from "./types.js";
 
 export { startPreview } from "./server.js"; 
@@ -21,11 +23,19 @@ let engineInstance: any = null;
 let wasmInitialized = false;
 
 const audioAnalyzer = new AudioAnalyzer();
+const videoManager = new VideoManager();
 
 async function getEngine(config: RenderConfig) {
   if (config.audio && !globalThis._ubevid_audio) {
     await audioAnalyzer.load(config.audio);
     globalThis._ubevid_audio = audioAnalyzer;
+  }
+  
+  // Pre-process videos
+  if (config.videos) {
+    for (const [id, path] of Object.entries(config.videos)) {
+      await videoManager.load(id, path, config.fps);
+    }
   }
 
   if (!wasmInitialized) {
@@ -89,6 +99,20 @@ async function renderRawFrame<T>(
 ): Promise<Uint8Array> {
     globalThis._ubevid_frame = frame;
     globalThis._ubevid_offset = 0;
+
+    // Update Video Textures for this frame
+    if (config.videos) {
+        for (const id of Object.keys(config.videos)) {
+            const videoFrameBuffer = await videoManager.getFrame(id, frame);
+            if (videoFrameBuffer) {
+                // Update the asset in Rust memory
+                // We use load_asset (PNG decoder) because our cache stores PNGs.
+                // This is reasonably fast for 1080p on local SSD.
+                engine.load_asset(id, videoFrameBuffer);
+            }
+        }
+    }
+
     const sceneGraph = sceneComponent(props);
     return engine.render(JSON.stringify(sceneGraph), Math.floor(config.width), Math.floor(config.height));
 }
@@ -115,7 +139,11 @@ export async function renderSingleFrame<T>(
 
   for (let i = 0; i < samples; i++) {
       const t = frame + (i * timeStep);
-      const subBuffer = await renderRawFrame(engine, sceneComponent, config, t, props);
+      // NOTE: For video textures, we currently snap to the nearest integer frame 
+      // because our cache is integer-based. For true motion blur on video, 
+      // we'd need optical flow or higher FPS cache. 
+      // For now, it will just use the same video frame for sub-samples or snap.
+      const subBuffer = await renderRawFrame(engine, sceneComponent, config, Math.round(t), props);
       for (let j = 0; j < subBuffer.length; j++) { accumulation[j] += subBuffer[j]; }
   }
 
@@ -132,7 +160,7 @@ export async function render<T>(
 ) {
   const { width, height, fps, duration } = config;
   const totalFrames = fps * duration;
-  const engine = await getEngine(config);
+  const engine = await getEngine(config); // Initializes assets & videos
 
   const ffmpegArgs = ["-y", "-f", "rawvideo", "-pix_fmt", "rgba", "-s", `${width}x${height}`, "-r", `${fps}`, "-i", "-"];
   if (config.audio) {

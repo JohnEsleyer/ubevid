@@ -33,6 +33,7 @@ impl EngineCore {
         let mut rgba = img.to_rgba8();
         let width = rgba.width();
         let height = rgba.height();
+        // Premultiply alpha manually for tiny_skia
         for p in rgba.chunks_exact_mut(4) {
             let a = p[3] as u16;
             if a != 255 {
@@ -43,6 +44,25 @@ impl EngineCore {
         }
         let pixmap = Pixmap::from_vec(rgba.into_raw(), tiny_skia::IntSize::from_wh(width, height).unwrap())
             .ok_or_else(|| "Failed to create pixmap".to_string())?;
+        self.assets.insert(id.to_string(), pixmap);
+        Ok(())
+    }
+
+    // New method for raw texture updates (Video Frames)
+    pub fn load_asset_raw(&mut self, id: &str, data: &[u8], width: u32, height: u32) -> Result<(), String> {
+        // We assume data is RGBA8. We need to premultiply it.
+        let mut pixels = data.to_vec();
+        for p in pixels.chunks_exact_mut(4) {
+            let a = p[3] as u16;
+            if a != 255 {
+                p[0] = ((p[0] as u16 * a) / 255) as u8;
+                p[1] = ((p[1] as u16 * a) / 255) as u8;
+                p[2] = ((p[2] as u16 * a) / 255) as u8;
+            }
+        }
+        
+        let pixmap = Pixmap::from_vec(pixels, tiny_skia::IntSize::from_wh(width, height).unwrap())
+            .ok_or_else(|| "Failed to create pixmap from raw data".to_string())?;
         self.assets.insert(id.to_string(), pixmap);
         Ok(())
     }

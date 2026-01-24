@@ -1,3 +1,4 @@
+
 # --- Dependencies ---
 node_modules/
 .bun-cache/
@@ -16,6 +17,9 @@ core/pkg/
 *.webm
 *.mov
 *.gif
+
+# --- Video Cache ---
+.ubevid/
 
 # --- TypeScript ---
 # Since we use Bun with "noEmit": true, we shouldn't have .js files 

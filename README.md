@@ -1,3 +1,5 @@
+
+
 # 🟣 Ubevid
 
 **The Visionary Video Orchestration Engine.**
@@ -24,16 +26,21 @@ Traditional automated video tools are heavy, carry the weight of the entire web 
 ### 📐 Modern Layout
 - **Flexbox & Grid:** Powered by [Taffy](https://github.com/DioxusLabs/taffy). Build video layouts exactly like you build websites.
 - **Intrinsic Text Measurement:** Containers automatically grow and wrap based on your typography.
+- **Transform System:** Full support for `Scale`, `Rotate`, `Skew`, and `Anchor Points` for precise coordinate mapping.
 
 ### 🎨 Professional Graphics
-- **SVG Path Engine:** High-performance vector rendering with support for absolute and relative paths.
-- **Glassmorphism & Filters:** Real-time Gaussian blur, brightness, contrast, saturation, and grayscale.
+- **Visual FX Pipeline:** 16+ Blend Modes (Screen, Multiply, Overlay, etc.) and real-time filters (Blur, Grayscale, Brightness, Contrast, Saturation, Sepia, Invert).
+- **SVG Path Engine:** High-performance vector rendering with support for absolute and relative paths, including **Path Length Measurement** for stroke-draw effects.
 - **Gradients & Shadows:** Linear and radial gradients with sub-pixel shadow rendering.
 
-### 🎬 Motion & Time
+### 🎬 Motion & Physics
 - **Temporal Motion Blur:** Cinematic sub-frame accumulation (configurable samples and shutter angle).
-- **Audio Reactivity:** Built-in RMS waveform analysis. Use the `useAudio()` hook to drive visuals with music.
-- **Bilingual DX:** Write creative "Sketches" in JavaScript for fast iteration; rely on a strict TypeScript engine for production.
+- **Spring Physics:** Integrated RK4 spring simulation for natural, bouncy UI animations.
+- **Perlin Noise:** Built-in 3D noise generator for organic textures and movement.
+- **Lottie Ingestion:** Basic support for Bodymovin JSON animations directly in the scene graph.
+
+### 🔊 Audio Reactivity
+- **Waveform Analysis:** Built-in RMS volume analysis via FFmpeg. Use the `useAudio()` hook to drive visual properties with music frequency.
 
 ---
 
@@ -41,7 +48,7 @@ Traditional automated video tools are heavy, carry the weight of the entire web 
 
 ### Prerequisites
 1. **Bun:** `curl -fsSL https://bun.sh/install | bash`
-2. **FFmpeg:** Required for final MP4 encoding.
+2. **FFmpeg:** Required for final MP4 encoding and audio decoding.
 3. **Rust:** (Only if modifying the core) `rustup` with `wasm-pack`.
 
 ### Setup
@@ -49,7 +56,7 @@ Traditional automated video tools are heavy, carry the weight of the entire web 
 # Install dependencies
 bun install
 
-# Build the Wasm core (if developing)
+# Build the Wasm core
 bun run build:wasm
 ```
 
@@ -61,15 +68,18 @@ bun run build:wasm
 Create a file like `sketches/hello.js`:
 
 ```javascript
-import { render, useFrame } from "../lib/engine.ts";
-import { interpolate, Easing } from "../lib/math.ts";
+import { render, useFrame, useAudio } from "../lib/engine.ts";
+import { interpolate, Spring } from "../lib/math.ts";
 
-const config = { width: 1280, height: 720, fps: 30, duration: 2 };
+const config = { 
+  width: 1280, height: 720, fps: 30, duration: 2,
+  audio: "assets/music.mp3" 
+};
 
 function MyVideo() {
   const frame = useFrame();
-  const opacity = interpolate(frame, [0, 30], [0, 1], Easing.inOutQuad);
-
+  const volume = useAudio();
+  
   return {
     tag: "view",
     style: {
@@ -79,9 +89,14 @@ function MyVideo() {
     },
     children: [
       {
-        tag: "text",
-        text: "HELLO UBEVID",
-        style: { color: "#8b5cf6", fontSize: 80, opacity }
+        tag: "rect",
+        style: {
+          width: 200 + (volume * 100),
+          height: 200,
+          backgroundColor: "#8b5cf6",
+          rotate: frame * 2,
+          borderRadius: 20
+        }
       }
     ]
   };
@@ -106,10 +121,10 @@ bun sketches/hello.js --render
 
 ## 🏗 Project Architecture
 
-- **`/core`**: Rust source code. Handles layout, rasterization, and post-processing filters.
-- **`/lib`**: TypeScript orchestrator. Manages the "Virtual Clock," Audio analysis, and the FFmpeg pipeline.
+- **`/core`**: Rust source code. Handles layout (Taffy), rasterization (TinySkia), and post-processing filters.
+- **`/lib`**: TypeScript orchestrator. Manages the "Virtual Clock," Audio analysis, Physics simulations, and the FFmpeg pipeline.
 - **`/sketches`**: Your creative playground.
-- **`/tests`**: Automated unit and integration tests for math and rendering consistency.
+- **`/tests`**: Automated unit tests for math, physics, and rendering consistency.
 
 ---
 
@@ -117,13 +132,19 @@ bun sketches/hello.js --render
 
 - [x] **Phase 1:** Flexbox Layout & Primitives.
 - [x] **Phase 2:** Advanced Strokes & SVG Paths.
-- [x] **Phase 3:** Post-processing (Blur/Filters) & Audio Reactivity.
-- [x] **Phase 4:** Temporal Motion Blur & Text Measurement.
-- [ ] **Phase 5:** Glyph Caching (Performance) & Inline Text Styling.
-- [ ] **Phase 6:** Lottie/BodyMovin Ingestion.
+- [x] **Phase 3:** Post-processing (Blur/Filters/Blend Modes) & Audio Reactivity.
+- [x] **Phase 4:** Temporal Motion Blur & Spring Physics.
+- [ ] **Phase 5:** Video-in-Video & Advanced Lottie (Bezier/Mattes).
+- [ ] **Phase 6:** Multithreaded Rendering & Performance Benchmarking.
+- [ ] **Phase 7:** CLI Tooling & Cloud Worker Recipes.
 
 ---
 
 ## ⚖️ License
 
 MIT © 2026 John Esleyer & Ubevid Contributors.
+
+--------------------------------------------------
+git commit message
+--------------------------------------------------
+docs: update README.md with newly implemented features and roadmap status

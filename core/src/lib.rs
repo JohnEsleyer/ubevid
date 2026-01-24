@@ -1,3 +1,4 @@
+
 mod types;
 mod utils;
 mod text;
@@ -10,6 +11,7 @@ use taffy::prelude::*;
 use tiny_skia::Pixmap;
 use crate::engine::EngineCore;
 use crate::types::SceneNode;
+use crate::utils::calculate_path_length;
 
 #[wasm_bindgen]
 extern "C" {
@@ -50,5 +52,9 @@ impl UbeEngine {
         render::draw_scene(&taffy, &root_node, root, &mut pixmap, &self.core, 0.0, 0.0, 1.0);
         
         pixmap.data().to_vec()
+    }
+
+    pub fn measure_path(&self, d: &str) -> f32 {
+        calculate_path_length(d)
     }
 }

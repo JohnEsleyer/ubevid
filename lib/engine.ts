@@ -34,7 +34,6 @@ async function getEngine(config: RenderConfig) {
       const wasmBuffer = await readFile(wasmPath);
       await init(wasmBuffer);
       wasmInitialized = true;
-      console.log("✅ Wasm Module Initialized");
     } catch (e) {
       console.error("❌ Failed to initialize Wasm:", e);
       throw e;
@@ -43,32 +42,25 @@ async function getEngine(config: RenderConfig) {
 
   if (!engineInstance) {
     engineInstance = UbeEngine.new();
-
     if (config.fonts) {
       for (const [name, path] of Object.entries(config.fonts)) {
-        try {
-          const buffer = await readFile(path);
-          engineInstance.load_font(name, new Uint8Array(buffer));
-          console.log(`   🔤 Font Registered: ${name}`);
-        } catch (e) {
-          console.error(`   ❌ Failed to load font ${name}:`, e);
-        }
+        const buffer = await readFile(path);
+        engineInstance.load_font(name, new Uint8Array(buffer));
       }
     }
-
     if (config.assets) {
       for (const [id, path] of Object.entries(config.assets)) {
-        try {
-          const buffer = await readFile(path);
-          engineInstance.load_asset(id, new Uint8Array(buffer));
-          console.log(`   🖼️ Asset Registered: ${id}`);
-        } catch (e) {
-          console.error(`   ❌ Failed to load asset ${id}:`, e);
-        }
+        const buffer = await readFile(path);
+        engineInstance.load_asset(id, new Uint8Array(buffer));
       }
     }
   }
   return engineInstance;
+}
+
+export function measurePath(d: string): number {
+    if (!engineInstance) return 0;
+    return engineInstance.measure_path(d);
 }
 
 export function useFrame(): number {
@@ -88,21 +80,6 @@ export function Sequence(props: { from: number; children: () => SceneNode }): Sc
   return result;
 }
 
-function accumulateBuffer(acc: Float32Array, buffer: Uint8Array) {
-    for (let i = 0; i < buffer.length; i++) {
-        acc[i] += buffer[i];
-    }
-}
-
-function averageBuffer(acc: Float32Array, count: number): Uint8Array {
-    const result = new Uint8Array(acc.length);
-    for (let i = 0; i < acc.length; i++) {
-        result[i] = acc[i] / count;
-    }
-    return result;
-}
-
-// Internal renderer that doesn't handle accumulation, just raw frame output
 async function renderRawFrame<T>(
     engine: any,
     sceneComponent: (props: T) => SceneNode,
@@ -129,26 +106,22 @@ export async function renderSingleFrame<T>(
       return renderRawFrame(engine, sceneComponent, config, frame, props);
   }
 
-  // Motion Blur Logic
   const shutterAngle = config.shutterAngle || 180;
-  const exposureDuration = shutterAngle / 360; // e.g. 0.5 frames
+  const exposureDuration = shutterAngle / 360;
   const timeStep = exposureDuration / samples;
   
-  // Accumulator (Float32 to prevent overflow during summing)
-  // We allocate this once per frame call, effectively.
   const bufferSize = Math.floor(config.width) * Math.floor(config.height) * 4;
   const accumulation = new Float32Array(bufferSize);
 
-  // Center the blur window around the frame, or start at frame? 
-  // Standard is usually starting at frame for "forward" accumulation or centered.
-  // Let's do simple forward accumulation starting at 'frame'.
   for (let i = 0; i < samples; i++) {
       const t = frame + (i * timeStep);
       const subBuffer = await renderRawFrame(engine, sceneComponent, config, t, props);
-      accumulateBuffer(accumulation, subBuffer);
+      for (let j = 0; j < subBuffer.length; j++) { accumulation[j] += subBuffer[j]; }
   }
 
-  return averageBuffer(accumulation, samples);
+  const result = new Uint8Array(bufferSize);
+  for (let i = 0; i < accumulation.length; i++) { result[i] = accumulation[i] / samples; }
+  return result;
 }
 
 export async function render<T>(
@@ -161,11 +134,6 @@ export async function render<T>(
   const totalFrames = fps * duration;
   const engine = await getEngine(config);
 
-  console.log(`🎬 Ubevid: Rendering ${totalFrames} frames...`);
-  if (config.motionBlurSamples) {
-      console.log(`   💨 Motion Blur Enabled: ${config.motionBlurSamples} samples, ${config.shutterAngle || 180}° shutter`);
-  }
-
   const ffmpegArgs = ["-y", "-f", "rawvideo", "-pix_fmt", "rgba", "-s", `${width}x${height}`, "-r", `${fps}`, "-i", "-"];
   if (config.audio) {
     ffmpegArgs.push("-i", config.audio, "-map", "0:v", "-map", "1:a", "-c:a", "aac", "-shortest");
@@ -173,19 +141,13 @@ export async function render<T>(
   ffmpegArgs.push("-c:v", "libx264", "-preset", "ultrafast", "-pix_fmt", "yuv420p", outputFile);
 
   const ffmpeg = spawn(["ffmpeg", ...ffmpegArgs], { stdin: "pipe", stdout: "ignore", stderr: "inherit" });
-  const startTime = Date.now();
-
   for (let i = 0; i < totalFrames; i++) {
-    // Reuse renderSingleFrame logic to handle MB
     const pixelBuffer = await renderSingleFrame(sceneComponent, config, i, props);
     ffmpeg.stdin.write(pixelBuffer);
-    
-    if (i % 10 === 0 || i === totalFrames - 1) {
-      process.stdout.write(`\r🚀 Rendering: ${Math.round((i / totalFrames) * 100)}% `);
-    }
+    if (i % 10 === 0) process.stdout.write(`\r🚀 Rendering: ${Math.round((i / totalFrames) * 100)}% `);
   }
 
   ffmpeg.stdin.end();
   await ffmpeg.exited;
-  console.log(`\n✅ Done! Saved to ${outputFile} in ${((Date.now() - startTime) / 1000).toFixed(2)}s`);
+  console.log(`\n✅ Saved to ${outputFile}`);
 }

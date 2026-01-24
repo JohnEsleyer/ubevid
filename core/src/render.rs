@@ -102,7 +102,16 @@ pub fn draw_scene(
     let w = layout.size.width;
     let h = layout.size.height;
 
-    if (w <= 0.0 || h <= 0.0) && node.text.is_none() && node.d.is_none() && node.tag != "circle" && node.tag != "ellipse" { return; }
+    // Check if node is visible/renderable. 
+    // If it has 0 size, we normally skip, BUT if it has children, we must continue 
+    // because children might be overflow:visible (default) and positioned absolutely.
+    // We also must render if it has a path (d) or text or is a shape tag, even if layout says 0 size (though Taffy usually handles that).
+    let has_children = node.children.as_ref().map_or(false, |c| !c.is_empty());
+    let is_renderable_primitive = node.text.is_some() || node.d.is_some() || node.tag == "circle" || node.tag == "ellipse";
+    
+    if (w <= 0.0 || h <= 0.0) && !has_children && !is_renderable_primitive { 
+        return; 
+    }
 
     let mut transform = Transform::from_translate(x, y);
     

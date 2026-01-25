@@ -1,6 +1,8 @@
+
 mod types;
 mod utils;
 mod text;
+mod filters; // New module
 mod engine;
 mod layout;
 mod render;
@@ -61,3 +63,4 @@ impl UbeEngine {
         calculate_path_length(d)
     }
 }
+

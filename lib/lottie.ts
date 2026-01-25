@@ -1,5 +1,6 @@
 import { interpolate } from "./math.js";
 import type { SceneNode, StyleConfig } from "./types.js";
+export * from "./lottie/index.js";
 
 // Simplified Lottie Types
 interface LottieKeyframe {
@@ -127,3 +128,4 @@ export function lottieToScene(lottie: LottieJSON, frame: number): SceneNode {
         children: rootChildren
     };
 }
+

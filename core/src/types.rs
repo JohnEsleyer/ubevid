@@ -1,4 +1,3 @@
-
 use serde::{Deserialize, Serialize};
 
 #[derive(Deserialize, Serialize, Debug, Clone)]
@@ -96,4 +95,6 @@ pub struct SceneNode {
     pub d: Option<String>,
     pub style: StyleConfig,
     pub children: Option<Vec<SceneNode>>,
+    // New: Allow a node to define a mask node
+    pub mask: Option<Box<SceneNode>>,
 }

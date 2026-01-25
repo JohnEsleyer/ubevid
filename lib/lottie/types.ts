@@ -1,4 +1,3 @@
-
 export interface LottieKeyframe {
     t: number; // Time (frames)
     s: any;    // Start Value
@@ -49,3 +48,4 @@ export interface LottieJSON {
     h: number;
     layers: LottieLayer[];
 }
+

@@ -90,6 +90,7 @@ export interface SceneNode {
   d?: string;
   style: StyleConfig;
   children?: SceneNode[];
+  mask?: SceneNode; 
 }
 
 export interface RenderConfig {
@@ -98,7 +99,7 @@ export interface RenderConfig {
   fps: number;
   duration: number;
   assets?: Record<string, string>;
-  videos?: Record<string, string>; // NEW: Video assets
+  videos?: Record<string, string>;
   fonts?: Record<string, string>;
   audio?: string;
   

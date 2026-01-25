@@ -6,12 +6,20 @@ import type { RenderConfig } from "./types.js";
 let engineInstance: any = null;
 let wasmInitialized = false;
 
+/**
+ * Initializes the Wasm core and loads assets.
+ * Updated to use the non-deprecated single-object initialization.
+ */
 export async function getEngine(config: RenderConfig) {
   if (!wasmInitialized) {
     try {
       const wasmPath = join(import.meta.dir, "../core/pkg/ubevid_core_bg.wasm");
       const wasmBuffer = await readFile(wasmPath);
-      await init(wasmBuffer);
+      
+      // Fix: Use the single-object parameter to avoid deprecation warnings
+      // which mangle the terminal progress bar.
+      await init({ module_or_path: wasmBuffer });
+      
       wasmInitialized = true;
     } catch (e) {
       console.error("❌ Failed to initialize Wasm:", e);
@@ -21,12 +29,16 @@ export async function getEngine(config: RenderConfig) {
 
   if (!engineInstance) {
     engineInstance = UbeEngine.new();
+    
+    // Load Fonts
     if (config.fonts) {
       for (const [name, path] of Object.entries(config.fonts)) {
         const buffer = await readFile(path);
         engineInstance.load_font(name, new Uint8Array(buffer));
       }
     }
+    
+    // Load Static Assets
     if (config.assets) {
       for (const [id, path] of Object.entries(config.assets)) {
         const buffer = await readFile(path);

@@ -1,8 +1,9 @@
 import { getLottieValue } from "./interpolator.js";
 import { bezierToPath, lottieColorToHex } from "./converter.js";
+import { generatePolystarPath } from "./shapes.js";
 import { measurePath } from "../engine.js";
 import type { SceneNode, StyleConfig } from "../types.js";
-import type { LottieJSON, LottieTrimPath } from "./types.js";
+import type { LottieJSON, LottieTrimPath, LottiePolystar } from "./types.js";
 
 export function lottieToScene(lottie: LottieJSON, frame: number): SceneNode {
     const layers = [...lottie.layers].reverse();
@@ -66,10 +67,17 @@ export function lottieToScene(lottie: LottieJSON, frame: number): SceneNode {
                              }
                          });
                      }
-                } else if (item.ty === "sh") {
-                    const bezier = getLottieValue(item.ks, frame);
-                    if (bezier) {
-                        const d = bezierToPath(bezier);
+                } else if (item.ty === "sh" || item.ty === "sr") {
+                    let d = "";
+                    
+                    if (item.ty === "sh") {
+                        const bezier = getLottieValue(item.ks, frame);
+                        if (bezier) d = bezierToPath(bezier);
+                    } else if (item.ty === "sr") {
+                        d = generatePolystarPath(item as LottiePolystar, frame);
+                    }
+
+                    if (d) {
                         const pathStyle: StyleConfig = {
                              position: "absolute",
                              left: anchor[0], top: anchor[1],
@@ -119,4 +127,3 @@ export function lottieToScene(lottie: LottieJSON, frame: number): SceneNode {
         children: rootChildren
     };
 }
-

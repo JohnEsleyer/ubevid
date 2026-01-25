@@ -1,3 +1,4 @@
+
 export interface LottieKeyframe {
     t: number; // Time (frames)
     s: any;    // Start Value
@@ -31,6 +32,18 @@ export interface LottieTrimPath {
     o: LottieProperty; // Offset
 }
 
+export interface LottiePolystar {
+    ty: "sr";
+    p: LottieProperty; // Position
+    r: LottieProperty; // Rotation
+    pt: LottieProperty; // Points
+    or: LottieProperty; // Outer Radius
+    os: LottieProperty; // Outer Roundness
+    ir?: LottieProperty; // Inner Radius (Star only)
+    is?: LottieProperty; // Inner Roundness (Star only)
+    sy: LottieProperty; // Type: 1=Star, 2=Polygon
+}
+
 export interface LottieLayer {
     ind: number;
     ty: number; // 4 = Shape
@@ -48,4 +61,3 @@ export interface LottieJSON {
     h: number;
     layers: LottieLayer[];
 }
-

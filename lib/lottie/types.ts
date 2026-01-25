@@ -1,3 +1,4 @@
+
 export interface LottieKeyframe {
     t: number; // Time (frames)
     s: any;    // Start Value
@@ -22,6 +23,13 @@ export interface LottieTransform {
     r: LottieProperty; // Rotation
     o: LottieProperty; // Opacity
     a: LottieProperty; // Anchor Point
+}
+
+export interface LottieTrimPath {
+    ty: "tm";
+    s: LottieProperty; // Start
+    e: LottieProperty; // End
+    o: LottieProperty; // Offset
 }
 
 export interface LottieLayer {

@@ -1,7 +1,8 @@
 import { getLottieValue } from "./interpolator.js";
 import { bezierToPath, lottieColorToHex } from "./converter.js";
+import { measurePath } from "../engine.js";
 import type { SceneNode, StyleConfig } from "../types.js";
-import type { LottieJSON } from "./types.js";
+import type { LottieJSON, LottieTrimPath } from "./types.js";
 
 export function lottieToScene(lottie: LottieJSON, frame: number): SceneNode {
     const layers = [...lottie.layers].reverse();
@@ -29,9 +30,25 @@ export function lottieToScene(lottie: LottieJSON, frame: number): SceneNode {
         const children: SceneNode[] = [];
         if (layer.ty === 4 && layer.shapes) {
             let currentFill = null;
+            let currentStroke = null;
+            let currentStrokeWidth = 0;
+            
+            // Scan for Trim Path
+            const tm = layer.shapes.find((s: any) => s.ty === "tm") as LottieTrimPath | undefined;
+            let trimStart = 0;
+            let trimEnd = 100;
+            
+            if (tm) {
+                trimStart = getLottieValue(tm.s, frame) ?? 0;
+                trimEnd = getLottieValue(tm.e, frame) ?? 100;
+            }
+
             for (const item of layer.shapes) {
                 if (item.ty === "fl") {
                      currentFill = getLottieValue(item.c, frame);
+                } else if (item.ty === "st") {
+                     currentStroke = getLottieValue(item.c, frame);
+                     currentStrokeWidth = getLottieValue(item.w, frame) ?? 0;
                 } else if (item.ty === "rc") {
                      const size = getLottieValue(item.s, frame);
                      const p = getLottieValue(item.p, frame);
@@ -51,16 +68,43 @@ export function lottieToScene(lottie: LottieJSON, frame: number): SceneNode {
                      }
                 } else if (item.ty === "sh") {
                     const bezier = getLottieValue(item.ks, frame);
-                    if (currentFill && bezier) {
-                        children.push({
-                            tag: "path",
-                            d: bezierToPath(bezier),
-                            style: {
-                                position: "absolute",
-                                left: anchor[0], top: anchor[1],
-                                backgroundColor: lottieColorToHex(currentFill)
+                    if (bezier) {
+                        const d = bezierToPath(bezier);
+                        const pathStyle: StyleConfig = {
+                             position: "absolute",
+                             left: anchor[0], top: anchor[1],
+                        };
+
+                        if (currentFill) {
+                            pathStyle.backgroundColor = lottieColorToHex(currentFill);
+                        }
+
+                        if (currentStroke && currentStrokeWidth > 0) {
+                            pathStyle.borderColor = lottieColorToHex(currentStroke);
+                            pathStyle.borderWidth = currentStrokeWidth;
+                            pathStyle.strokeLineCap = "round";
+                            pathStyle.strokeLineJoin = "round";
+
+                            if (tm) {
+                                const len = measurePath(d);
+                                if (len > 0) {
+                                    const s = (trimStart / 100) * len;
+                                    const e = (trimEnd / 100) * len;
+                                    const visibleLen = Math.abs(e - s);
+                                    
+                                    pathStyle.strokeDashArray = [visibleLen, len];
+                                    pathStyle.strokeDashOffset = -s;
+                                }
                             }
-                        });
+                        }
+
+                        if (currentFill || currentStroke) {
+                            children.push({
+                                tag: "path",
+                                d,
+                                style: pathStyle
+                            });
+                        }
                     }
                 }
             }
@@ -75,3 +119,4 @@ export function lottieToScene(lottie: LottieJSON, frame: number): SceneNode {
         children: rootChildren
     };
 }
+

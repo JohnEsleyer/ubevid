@@ -1,4 +1,3 @@
-import { getLottieValue } from "./interpolator.js";
 import type { LottieBezier } from "./types.js";
 
 /**
@@ -11,20 +10,28 @@ export function bezierToPath(bezier: LottieBezier): string {
     let path = `M ${v[0][0]},${v[0][1]}`;
 
     for (let j = 1; j < v.length; j++) {
-        const cp1x = v[j - 1][0] + o[j - 1][0];
-        const cp1y = v[j - 1][1] + o[j - 1][1];
-        const cp2x = v[j][0] + i[j][0];
-        const cp2y = v[j][1] + i[j][1];
+        // Safe access to tangents defaulting to 0,0 if missing or mismatched length
+        const tangentOut = (o && o[j - 1]) ? o[j - 1] : [0, 0];
+        const tangentIn = (i && i[j]) ? i[j] : [0, 0];
+
+        const cp1x = v[j - 1][0] + tangentOut[0];
+        const cp1y = v[j - 1][1] + tangentOut[1];
+        const cp2x = v[j][0] + tangentIn[0];
+        const cp2y = v[j][1] + tangentIn[1];
         path += ` C ${cp1x},${cp1y} ${cp2x},${cp2y} ${v[j][0]},${v[j][1]}`;
     }
 
     if (c) {
         const j = 0;
         const last = v.length - 1;
-        const cp1x = v[last][0] + o[last][0];
-        const cp1y = v[last][1] + o[last][1];
-        const cp2x = v[j][0] + i[j][0];
-        const cp2y = v[j][1] + i[j][1];
+        
+        const tangentOut = (o && o[last]) ? o[last] : [0, 0];
+        const tangentIn = (i && i[j]) ? i[j] : [0, 0];
+
+        const cp1x = v[last][0] + tangentOut[0];
+        const cp1y = v[last][1] + tangentOut[1];
+        const cp2x = v[j][0] + tangentIn[0];
+        const cp2y = v[j][1] + tangentIn[1];
         path += ` C ${cp1x},${cp1y} ${cp2x},${cp2y} ${v[j][0]},${v[j][1]} Z`;
     }
 

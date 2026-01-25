@@ -4,19 +4,13 @@ import { getRawEngine } from "./wasm.js";
 import { renderSingleFrame } from "./renderer.js";
 import type { RenderConfig, SceneNode } from "./types.js";
 
+// Re-export hooks
+export * from "./hooks.js";
 export { startPreview } from "./server.js";
 
 export function measurePath(d: string): number {
   const engine = getRawEngine();
   return engine ? engine.measure_path(d) : 0;
-}
-
-export function useFrame(): number {
-  return State.frame - State.offset;
-}
-
-export function useAudio(fps: number = 30): number {
-  return State.audio ? State.audio.getVolume(State.frame, fps) : 0;
 }
 
 export function Sequence(props: { from: number; children: () => SceneNode }): SceneNode {
@@ -55,4 +49,3 @@ export async function render<T>(
 }
 
 export { renderSingleFrame };
-

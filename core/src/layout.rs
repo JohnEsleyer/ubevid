@@ -28,12 +28,12 @@ pub fn build_taffy(
 
     let style = Style {
         size: Size { width: w, height: h },
-        aspect_ratio: node.style.aspectRatio,
+        aspect_ratio: node.style.aspect_ratio,
         position: match node.style.position.as_deref() { Some("absolute") => Position::Absolute, _ => Position::Relative },
         flex_grow: node.style.flex.unwrap_or(0.0),
-        flex_direction: match node.style.flexDirection.as_deref() { Some("column") => FlexDirection::Column, _ => FlexDirection::Row },
-        justify_content: Some(match node.style.justifyContent.as_deref() { Some("center") => JustifyContent::Center, Some("spaceBetween") => JustifyContent::SpaceBetween, Some("flexEnd") => JustifyContent::FlexEnd, _ => JustifyContent::FlexStart }),
-        align_items: Some(match node.style.alignItems.as_deref() { Some("center") => AlignItems::Center, Some("flexEnd") => AlignItems::FlexEnd, _ => AlignItems::FlexStart }),
+        flex_direction: match node.style.flex_direction.as_deref() { Some("column") => FlexDirection::Column, _ => FlexDirection::Row },
+        justify_content: Some(match node.style.justify_content.as_deref() { Some("center") => JustifyContent::Center, Some("spaceBetween") => JustifyContent::SpaceBetween, Some("flexEnd") => JustifyContent::FlexEnd, _ => JustifyContent::FlexStart }),
+        align_items: Some(match node.style.align_items.as_deref() { Some("center") => AlignItems::Center, Some("flexEnd") => AlignItems::FlexEnd, _ => AlignItems::FlexStart }),
         padding: Rect {
             left: LengthPercentage::Points(node.style.padding.unwrap_or(0.0)),
             right: LengthPercentage::Points(node.style.padding.unwrap_or(0.0)),
@@ -41,10 +41,10 @@ pub fn build_taffy(
             bottom: LengthPercentage::Points(node.style.padding.unwrap_or(0.0)),
         },
         margin: Rect {
-            left: LengthPercentageAuto::Points(node.style.marginLeft.or(node.style.margin).unwrap_or(0.0)),
-            right: LengthPercentageAuto::Points(node.style.marginRight.or(node.style.margin).unwrap_or(0.0)),
-            top: LengthPercentageAuto::Points(node.style.marginTop.or(node.style.margin).unwrap_or(0.0)),
-            bottom: LengthPercentageAuto::Points(node.style.marginBottom.or(node.style.margin).unwrap_or(0.0)),
+            left: LengthPercentageAuto::Points(node.style.margin_left.or(node.style.margin).unwrap_or(0.0)),
+            right: LengthPercentageAuto::Points(node.style.margin_right.or(node.style.margin).unwrap_or(0.0)),
+            top: LengthPercentageAuto::Points(node.style.margin_top.or(node.style.margin).unwrap_or(0.0)),
+            bottom: LengthPercentageAuto::Points(node.style.margin_bottom.or(node.style.margin).unwrap_or(0.0)),
         },
         inset: Rect {
             left: node.style.left.map(LengthPercentageAuto::Points).unwrap_or(LengthPercentageAuto::Auto),
@@ -56,14 +56,14 @@ pub fn build_taffy(
     };
 
     if let Some(text_content_ref) = &node.text {
-        let font_name = node.style.fontFamily.as_deref().unwrap_or("default");
+        let font_name = node.style.font_family.as_deref().unwrap_or("default");
         let font_opt = fonts.get(font_name).or_else(|| fonts.values().next()).cloned();
         
         if let Some(font) = font_opt {
             let text_content = String::from(text_content_ref);
-            let font_size = node.style.fontSize.unwrap_or(32.0);
-            let letter_spacing = node.style.letterSpacing.unwrap_or(0.0);
-            let line_height = node.style.lineHeight.unwrap_or(font_size * 1.2);
+            let font_size = node.style.font_size.unwrap_or(32.0);
+            let letter_spacing = node.style.letter_spacing.unwrap_or(0.0);
+            let line_height = node.style.line_height.unwrap_or(font_size * 1.2);
 
             return taffy.new_leaf_with_measure(style, MeasureFunc::Boxed(Box::new(move |_known_dims, available_space| {
                 let max_width = match available_space.width {

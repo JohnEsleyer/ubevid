@@ -15,43 +15,44 @@ pub struct StyleConfig {
     // Layout
     pub width: Option<f32>,
     pub height: Option<f32>,
-    pub aspectRatio: Option<f32>,
+    pub aspect_ratio: Option<f32>,
     pub flex: Option<f32>,
-    pub flexDirection: Option<String>, 
-    pub justifyContent: Option<String>,
-    pub alignItems: Option<String>,
+    pub flex_direction: Option<String>, 
+    pub justify_content: Option<String>,
+    pub align_items: Option<String>,
     pub margin: Option<f32>,
-    pub marginTop: Option<f32>,
-    pub marginBottom: Option<f32>,
-    pub marginLeft: Option<f32>,
-    pub marginRight: Option<f32>,
+    pub margin_top: Option<f32>,
+    pub margin_bottom: Option<f32>,
+    pub margin_left: Option<f32>,
+    pub margin_right: Option<f32>,
     pub padding: Option<f32>,
     pub position: Option<String>,
     pub top: Option<f32>,
     pub left: Option<f32>,
     pub right: Option<f32>,
     pub bottom: Option<f32>,
-    pub zIndex: Option<i32>,
+    pub z_index: Option<i32>,
     pub overflow: Option<String>,
 
     // Visuals
-    pub backgroundColor: Option<String>,
-    pub backgroundGradient: Option<GradientConfig>,
-    pub borderRadius: Option<f32>,
-    pub borderTopLeftRadius: Option<f32>,
-    pub borderTopRightRadius: Option<f32>,
-    pub borderBottomLeftRadius: Option<f32>,
-    pub borderBottomRightRadius: Option<f32>,
-    pub borderColor: Option<String>,
-    pub borderWidth: Option<f32>,
+    pub background_color: Option<String>,
+    pub background_gradient: Option<GradientConfig>,
+    pub border_radius: Option<f32>,
+    pub border_top_left_radius: Option<f32>,
+    pub border_top_right_radius: Option<f32>,
+    pub border_bottom_left_radius: Option<f32>,
+    pub border_bottom_right_radius: Option<f32>,
+    pub border_color: Option<String>,
+    pub border_width: Option<f32>,
     pub opacity: Option<f32>,
-    pub blendMode: Option<String>,
+    pub blend_mode: Option<String>,
+    pub mask_mode: Option<String>, 
     
     // Strokes
-    pub strokeLineCap: Option<String>,
-    pub strokeLineJoin: Option<String>,
-    pub strokeDashArray: Option<Vec<f32>>,
-    pub strokeDashOffset: Option<f32>,
+    pub stroke_line_cap: Option<String>,
+    pub stroke_line_join: Option<String>,
+    pub stroke_dash_array: Option<Vec<f32>>,
+    pub stroke_dash_offset: Option<f32>,
 
     // Filters
     pub grayscale: Option<f32>,
@@ -63,27 +64,27 @@ pub struct StyleConfig {
     pub sepia: Option<f32>,
 
     // Shadows
-    pub shadowColor: Option<String>,
-    pub shadowBlur: Option<f32>,
-    pub shadowOffsetX: Option<f32>,
-    pub shadowOffsetY: Option<f32>,
+    pub shadow_color: Option<String>,
+    pub shadow_blur: Option<f32>,
+    pub shadow_offset_x: Option<f32>,
+    pub shadow_offset_y: Option<f32>,
     
     // Text
     pub color: Option<String>,
-    pub fontSize: Option<f32>,
-    pub fontFamily: Option<String>,
-    pub textAlign: Option<String>,
-    pub lineHeight: Option<f32>,
-    pub letterSpacing: Option<f32>,
+    pub font_size: Option<f32>,
+    pub font_family: Option<String>,
+    pub text_align: Option<String>,
+    pub line_height: Option<f32>,
+    pub letter_spacing: Option<f32>,
 
     // Image
-    pub objectFit: Option<String>,
+    pub object_fit: Option<String>,
     
     // Transform
     pub rotate: Option<f32>,
     pub scale: Option<f32>,
-    pub skewX: Option<f32>,
-    pub skewY: Option<f32>,
+    pub skew_x: Option<f32>,
+    pub skew_y: Option<f32>,
 }
 
 #[derive(Deserialize, Serialize, Debug, Clone)]
@@ -95,6 +96,5 @@ pub struct SceneNode {
     pub d: Option<String>,
     pub style: StyleConfig,
     pub children: Option<Vec<SceneNode>>,
-    // New: Allow a node to define a mask node
     pub mask: Option<Box<SceneNode>>,
 }

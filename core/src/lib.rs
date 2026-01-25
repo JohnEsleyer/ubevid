@@ -2,10 +2,10 @@
 mod types;
 mod utils;
 mod text;
-mod filters; // New module
+mod filters;
 mod engine;
 mod layout;
-mod render;
+mod render; // Now a directory module
 
 use wasm_bindgen::prelude::*;
 use taffy::prelude::*;
@@ -54,6 +54,7 @@ impl UbeEngine {
         }).unwrap();
 
         let mut pixmap = Pixmap::new(width, height).unwrap();
+        // Updated call to new module structure
         render::draw_scene(&taffy, &root_node, root, &mut pixmap, &self.core, 0.0, 0.0, 1.0);
         
         pixmap.data().to_vec()
@@ -63,4 +64,3 @@ impl UbeEngine {
         calculate_path_length(d)
     }
 }
-

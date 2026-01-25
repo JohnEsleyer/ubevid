@@ -6,6 +6,7 @@ export interface GradientConfig {
 }
 
 export interface StyleConfig {
+  // Layout
   width?: number;
   height?: number;
   aspectRatio?: number;
@@ -43,6 +44,8 @@ export interface StyleConfig {
   blendMode?: "sourceOver" | "screen" | "multiply" | "overlay" | "darken" | "lighten" | 
               "colorDodge" | "colorBurn" | "hardLight" | "softLight" | "difference" | "exclusion" | 
               "hue" | "saturation" | "color" | "luminosity" | "plus" | "xor";
+
+  maskMode?: "alpha" | "alphaInverted" | "luminance" | "luminanceInverted";
 
   // Strokes
   strokeLineCap?: "butt" | "round" | "square";

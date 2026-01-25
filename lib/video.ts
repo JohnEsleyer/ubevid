@@ -2,57 +2,47 @@ import { spawn } from "bun";
 import { join } from "path";
 import { mkdir, exists } from "fs/promises";
 
+/**
+ * High-performance video frame manager.
+ * Uses raw RGBA binary files to avoid PNG/JPEG decoding overhead.
+ */
 export class VideoManager {
     private cacheDir: string;
     private processed: Set<string> = new Set();
-    private videoInfo: Record<string, { frameCount: number, fps: number }> = {};
 
-    constructor(cacheDir: string = ".ubevid/cache") {
+    constructor(cacheDir: string = ".ubevid/cache_v2") {
         this.cacheDir = cacheDir;
     }
 
-    async load(id: string, path: string, projectFps: number): Promise<void> {
+    async load(id: string, path: string, projectFps: number, width: number, height: number): Promise<void> {
         if (this.processed.has(id)) return;
 
         const outDir = join(this.cacheDir, id);
-        
-        // Simple check: if directory exists and has files, assume processed.
-        // In production, we'd check a manifest or hash.
         if (await exists(outDir)) {
-             // For now, assume if dir exists, it's done.
-            console.log(`🎥 Video '${id}' found in cache.`);
             this.processed.add(id);
             return;
         }
 
-        console.log(`⏳ Processing video '${id}' (Extracting frames at ${projectFps}fps)...`);
+        console.log(`🎥 Extracting high-speed raw frames for '${id}'...`);
         await mkdir(outDir, { recursive: true });
 
-        // Extract frames as PNGs
+        // Extract as raw rgba streams
         const proc = spawn([
-            "ffmpeg",
-            "-i", path,
-            "-vf", `fps=${projectFps}`,
-            "-q:v", "2", // High quality JPEG could be faster, but PNG is lossless. Let's use PNG for quality.
-            join(outDir, "%06d.png")
-        ], { 
-            stdout: "ignore", 
-            stderr: "ignore" 
-        });
+            "ffmpeg", "-i", path,
+            "-vf", `fps=${projectFps},scale=${width}:${height}`,
+            "-f", "image2",
+            "-vcodec", "rawvideo",
+            "-pix_fmt", "rgba",
+            join(outDir, "%06d.raw")
+        ], { stdout: "ignore", stderr: "ignore" });
 
         await proc.exited;
-        if (proc.exitCode !== 0) {
-            console.error(`❌ FFmpeg failed to process video '${id}'`);
-        } else {
-            console.log(`✅ Video '${id}' processed.`);
-            this.processed.add(id);
-        }
+        this.processed.add(id);
     }
 
     async getFrame(id: string, frame: number): Promise<Uint8Array | null> {
-        // FFmpeg extraction usually starts at 1
         const fIndex = frame + 1;
-        const fname = fIndex.toString().padStart(6, '0') + ".png";
+        const fname = fIndex.toString().padStart(6, '0') + ".raw";
         const path = join(this.cacheDir, id, fname);
         
         try {
@@ -61,7 +51,6 @@ export class VideoManager {
                 return new Uint8Array(await file.arrayBuffer());
             }
         } catch (e) {}
-        
         return null;
     }
 }

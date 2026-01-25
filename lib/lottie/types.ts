@@ -1,4 +1,3 @@
-
 export interface LottieKeyframe {
     t: number; // Time (frames)
     s: any;    // Start Value
@@ -50,6 +49,7 @@ export interface LottieLayer {
     ks: LottieTransform;
     st: number; // Start Frame
     op: number; // Out Frame
+    tt?: number; // Track Matte Type: 1=Alpha, 2=Alpha Inverted
     shapes?: any[];
 }
 

@@ -1,5 +1,3 @@
-
-
 # 🟣 Ubevid
 
 **The Visionary Video Orchestration Engine.**
@@ -15,32 +13,33 @@ Ubevid (derived from *Ube*—the vibrant purple yam—and *Video*) is a high-per
 Traditional automated video tools are heavy, carry the weight of the entire web DOM, and are prone to "non-deterministic" stutters if the CPU spikes. 
 
 **Ubevid is different:**
-- **Absolute Determinism:** Every frame is calculated, not "captured." Frame 100 will look identical whether rendered on a 2015 laptop or a 2026 server cluster.
-- **Headless & Lightweight:** No 1GB Chromium installation. Powered by **Bun**, **Rust**, and **TinySkia**.
-- **CPU-First, GPU-Optional:** Designed to run on scalable, cheap cloud infrastructure (Lambda/Edge) without requiring specialized GPU drivers.
+- **Absolute Determinism:** Every frame is calculated, not "captured."
+- **Phase 1 Parallel Power:** Now features a **Multithreaded Render Engine** using Bun Workers to distribute frames across all CPU cores.
+- **Zero-Copy Pipeline:** Optimized video ingestion using raw binary frame caching, bypassing slow image decoding.
+- **Headless & Native:** Powered by **Bun**, **Rust (Wasm)**, and **TinySkia**. No Chromium required.
 
 ---
 
 ## ✨ Key Features
 
+### ⚡ Performance (Phase 1 Complete)
+- **Threaded Rendering:** Scales automatically to your CPU core count for lightning-fast MP4 exports.
+- **Wasm SIMD Acceleration:** Pixel-level operations (filters, blending) are optimized at the instruction level.
+- **Aesthetic CLI:** A beautiful, minimal terminal interface with purple progress bars, ETAs, and high-fidelity logging.
+
 ### 📐 Modern Layout
 - **Flexbox & Grid:** Powered by [Taffy](https://github.com/DioxusLabs/taffy). Build video layouts exactly like you build websites.
 - **Intrinsic Text Measurement:** Containers automatically grow and wrap based on your typography.
-- **Transform System:** Full support for `Scale`, `Rotate`, `Skew`, and `Anchor Points` for precise coordinate mapping.
 
 ### 🎨 Professional Graphics
 - **Visual FX Pipeline:** 16+ Blend Modes (Screen, Multiply, Overlay, etc.) and real-time filters (Blur, Grayscale, Brightness, Contrast, Saturation, Sepia, Invert).
-- **SVG Path Engine:** High-performance vector rendering with support for absolute and relative paths, including **Path Length Measurement** for stroke-draw effects.
-- **Gradients & Shadows:** Linear and radial gradients with sub-pixel shadow rendering.
+- **Masking Engine:** Support for Alpha and Luminance masks with layout-aware positioning.
+- **SVG Path Engine:** High-performance vector rendering with Path Length Measurement for stroke-draw effects.
 
 ### 🎬 Motion & Physics
-- **Temporal Motion Blur:** Cinematic sub-frame accumulation (configurable samples and shutter angle).
 - **Spring Physics:** Integrated RK4 spring simulation for natural, bouncy UI animations.
-- **Perlin Noise:** Built-in 3D noise generator for organic textures and movement.
-- **Lottie Ingestion:** Basic support for Bodymovin JSON animations directly in the scene graph.
-
-### 🔊 Audio Reactivity
-- **Waveform Analysis:** Built-in RMS volume analysis via FFmpeg. Use the `useAudio()` hook to drive visual properties with music frequency.
+- **Lottie Ingestion:** Ingest Bodymovin JSON animations directly into the native scene graph.
+- **Temporal Motion Blur:** Cinematic sub-frame accumulation for smooth motion.
 
 ---
 
@@ -68,22 +67,20 @@ bun run build:wasm
 Create a file like `sketches/hello.js`:
 
 ```javascript
-import { render, useFrame, useAudio } from "../lib/engine.ts";
-import { interpolate, Spring } from "../lib/math.ts";
+import { render, useFrame } from "../lib/engine.js";
+import path from "path";
 
 const config = { 
-  width: 1280, height: 720, fps: 30, duration: 2,
-  audio: "assets/music.mp3" 
+  width: 1920, height: 1080, fps: 60, duration: 5 
 };
 
-function MyVideo() {
+export default function MyVideo() {
   const frame = useFrame();
-  const volume = useAudio();
   
   return {
     tag: "view",
     style: {
-      width: 1280, height: 720,
+      width: 1920, height: 1080,
       backgroundColor: "#111",
       justifyContent: "center", alignItems: "center"
     },
@@ -91,18 +88,21 @@ function MyVideo() {
       {
         tag: "rect",
         style: {
-          width: 200 + (volume * 100),
-          height: 200,
+          width: 400, height: 400,
           backgroundColor: "#8b5cf6",
           rotate: frame * 2,
-          borderRadius: 20
+          borderRadius: 40
         }
       }
     ]
   };
 }
 
-await render(MyVideo, config, "output.mp4");
+// Support parallel rendering by passing the file path
+const currentFile = path.resolve(import.meta.path);
+if (process.argv.includes("--render")) {
+  await render(MyVideo, config, "output.mp4", {}, currentFile);
+}
 ```
 
 ### 2. Live Preview
@@ -110,9 +110,9 @@ Run the preview server with live-reloading:
 ```bash
 bun --watch sketches/hello.js
 ```
-Navigate to `http://localhost:3000` to scrub through your timeline and download test renders.
+Navigate to `http://localhost:3000` to scrub the timeline and download test renders.
 
-### 3. Production Render
+### 3. Production Render (Parallel)
 ```bash
 bun sketches/hello.js --render
 ```
@@ -121,30 +121,28 @@ bun sketches/hello.js --render
 
 ## 🏗 Project Architecture
 
-- **`/core`**: Rust source code. Handles layout (Taffy), rasterization (TinySkia), and post-processing filters.
-- **`/lib`**: TypeScript orchestrator. Manages the "Virtual Clock," Audio analysis, Physics simulations, and the FFmpeg pipeline.
+- **`/core`**: Rust source code. Handles layout (Taffy), rasterization (TinySkia), and masking.
+- **`/lib`**: TypeScript orchestrator. Manages the Worker pool, Wasm bridging, and the FFmpeg pipeline.
 - **`/sketches`**: Your creative playground.
-- **`/tests`**: Automated unit tests for math, physics, and rendering consistency.
+- **`/tests`**: Automated unit tests for rendering consistency and masking logic.
 
 ---
 
 ## 🗺 Roadmap
 
-- [x] **Phase 1:** Flexbox Layout & Primitives.
-- [x] **Phase 2:** Advanced Strokes & SVG Paths.
-- [x] **Phase 3:** Post-processing (Blur/Filters/Blend Modes) & Audio Reactivity.
-- [x] **Phase 4:** Temporal Motion Blur & Spring Physics.
-- [ ] **Phase 5:** Video-in-Video & Advanced Lottie (Bezier/Mattes).
-- [ ] **Phase 6:** Multithreaded Rendering & Performance Benchmarking.
-- [ ] **Phase 7:** CLI Tooling & Cloud Worker Recipes.
+- [x] **Phase 1: Speed & Infrastructure**
+  - Multithreaded rendering (Bun Workers).
+  - Raw binary video pipeline.
+  - Aesthetic CLI & Modern Wasm Init.
+- [ ] **Phase 2: Creative Expressiveness**
+  - Custom Shader Nodes (GLSL-like).
+  - Kinetic Typography (Text-on-path).
+  - Advanced Lottie (Repeaters/Expressions).
+- [ ] **Phase 3: Tooling**
+  - Live Layout Debugger (Visual Taffy inspector).
 
 ---
 
 ## ⚖️ License
 
 MIT © 2026 John Esleyer & Ubevid Contributors.
-
---------------------------------------------------
-git commit message
---------------------------------------------------
-docs: update README.md with newly implemented features and roadmap status

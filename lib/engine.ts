@@ -14,7 +14,9 @@ export { renderSingleFrame } from "./renderer.js";
 export * from "./components.js";
 export * from "./math.js";
 export * from "./stdlib/typography.js";
-export * from "./stdlib/charts.js"; // Export charts
+export * from "./stdlib/charts.js";
+export * from "./stdlib/transitions.js";
+export * from "./stdlib/effects.js"; // Export charts
 
 import { spawn } from "bun";
 import os from "node:os";

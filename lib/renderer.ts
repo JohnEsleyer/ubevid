@@ -33,15 +33,51 @@ async function _renderRawFrame(
   const layoutRoot = calculateLayout(scene, config.width, config.height);
 
   // 2. Recursive Draw Function
-  async function drawNode(node: SceneNode, yogaNode: any) {
+  async function drawNode(node: SceneNode, yogaNode: any, targetCtx: any) {
     const layout = yogaNode.getComputedLayout();
-    ctx.save();
+    targetCtx.save();
 
     // Opacity
-    if (node.style.opacity !== undefined) ctx.globalAlpha *= node.style.opacity;
+    if (node.style.opacity !== undefined) targetCtx.globalAlpha *= node.style.opacity;
 
     // Position the context
-    ctx.translate(layout.left, layout.top);
+    targetCtx.translate(layout.left, layout.top);
+
+    // Apply Transforms (Pivot centered by default)
+    if (node.style.rotate || node.style.scale !== undefined || node.style.skewX || node.style.skewY) {
+      targetCtx.translate(layout.width / 2, layout.height / 2);
+      if (node.style.rotate) targetCtx.rotate((node.style.rotate * Math.PI) / 180);
+      if (node.style.scale !== undefined) targetCtx.scale(node.style.scale, node.style.scale);
+      if (node.style.skewX) targetCtx.transform(1, 0, Math.tan((node.style.skewX * Math.PI) / 180), 1, 0, 0);
+      if (node.style.skewY) targetCtx.transform(1, Math.tan((node.style.skewY * Math.PI) / 180), 0, 1, 0, 0);
+      targetCtx.translate(-layout.width / 2, -layout.height / 2);
+    }
+
+    // Blend Mode
+    if (node.style.blendMode) {
+      const modeMap: Record<string, GlobalCompositeOperation> = {
+        sourceOver: "source-over",
+        screen: "screen",
+        multiply: "multiply",
+        overlay: "overlay",
+        darken: "darken",
+        lighten: "lighten",
+        colorDodge: "color-dodge",
+        colorBurn: "color-burn",
+        hardLight: "hard-light",
+        softLight: "soft-light",
+        difference: "difference",
+        exclusion: "exclusion",
+        hue: "hue",
+        saturation: "saturation",
+        color: "color",
+        luminosity: "luminosity",
+        plus: "lighter",
+        xor: "xor",
+      };
+      const gco = modeMap[node.style.blendMode];
+      if (gco) targetCtx.globalCompositeOperation = gco;
+    }
 
     // Apply Native Skia Filters (Blur, Brightness, etc)
     const filters: string[] = [];
@@ -49,58 +85,72 @@ async function _renderRawFrame(
     if (node.style.brightness !== undefined) filters.push(`brightness(${node.style.brightness})`);
     if (node.style.contrast !== undefined) filters.push(`contrast(${node.style.contrast})`);
     if (node.style.grayscale !== undefined) filters.push(`grayscale(${node.style.grayscale})`);
-    if (filters.length > 0) ctx.filter = filters.join(" ");
+    if (node.style.saturation !== undefined) filters.push(`saturate(${node.style.saturation})`);
+    if (node.style.invert !== undefined) filters.push(`invert(${node.style.invert})`);
+    if (node.style.sepia !== undefined) filters.push(`sepia(${node.style.sepia})`);
+    if (filters.length > 0) targetCtx.filter = filters.join(" ");
+
+    // Handle Masking (Create offscreen if mask exists)
+    let currentCtx = targetCtx;
+    let offscreen: any = null;
+
+    if (node.mask) {
+      offscreen = new Canvas(layout.width, layout.height);
+      currentCtx = offscreen.getContext("2d");
+    }
+
+    // --- DRAWING TO currentCtx ---
 
     // Clip/Overflow
     if (node.style.overflow === "hidden") {
-      ctx.beginPath();
+      currentCtx.beginPath();
       if (node.style.borderRadius) {
-        ctx.roundRect(0, 0, layout.width, layout.height, node.style.borderRadius);
+        currentCtx.roundRect(0, 0, layout.width, layout.height, node.style.borderRadius);
       } else {
-        ctx.rect(0, 0, layout.width, layout.height);
+        currentCtx.rect(0, 0, layout.width, layout.height);
       }
-      ctx.clip();
+      currentCtx.clip();
     }
 
     // Draw Background
     if (node.style.backgroundColor) {
-      ctx.fillStyle = node.style.backgroundColor;
+      currentCtx.fillStyle = node.style.backgroundColor;
       if (node.style.borderRadius) {
-        ctx.beginPath();
-        ctx.roundRect(0, 0, layout.width, layout.height, node.style.borderRadius);
-        ctx.fill();
+        currentCtx.beginPath();
+        currentCtx.roundRect(0, 0, layout.width, layout.height, node.style.borderRadius);
+        currentCtx.fill();
       } else {
-        ctx.fillRect(0, 0, layout.width, layout.height);
+        currentCtx.fillRect(0, 0, layout.width, layout.height);
       }
     }
 
     // Draw Border
     if (node.style.borderColor && node.style.borderWidth) {
-      ctx.strokeStyle = node.style.borderColor;
-      ctx.lineWidth = node.style.borderWidth;
+      currentCtx.strokeStyle = node.style.borderColor;
+      currentCtx.lineWidth = node.style.borderWidth;
       if (node.style.borderRadius) {
-        ctx.beginPath();
-        ctx.roundRect(0, 0, layout.width, layout.height, node.style.borderRadius);
-        ctx.stroke();
+        currentCtx.beginPath();
+        currentCtx.roundRect(0, 0, layout.width, layout.height, node.style.borderRadius);
+        currentCtx.stroke();
       } else {
-        ctx.strokeRect(0, 0, layout.width, layout.height);
+        currentCtx.strokeRect(0, 0, layout.width, layout.height);
       }
     }
 
     // Draw Content based on tag
     if (node.tag === "text" && node.text) {
-      ctx.fillStyle = node.style.color || "#ffffff";
+      currentCtx.fillStyle = node.style.color || "#ffffff";
       const fontSize = node.style.fontSize || 30;
       const fontFamily = node.style.fontFamily || "sans-serif";
       const fontWeight = node.style.fontWeight || "";
-      ctx.font = `${fontWeight} ${fontSize}px "${fontFamily}"`.trim();
+      currentCtx.font = `${fontWeight} ${fontSize}px "${fontFamily}"`.trim();
 
-      const textMetrics = ctx.measureText(node.text);
+      const textMetrics = currentCtx.measureText(node.text);
       let tx = 0;
       if (node.style.textAlign === "center") tx = (layout.width - textMetrics.width) / 2;
       else if (node.style.textAlign === "right") tx = layout.width - textMetrics.width;
 
-      ctx.fillText(node.text, tx, fontSize);
+      currentCtx.fillText(node.text, tx, fontSize);
     } else if (node.tag === "image" && node.src) {
       let img = imageCache.get(node.src);
       if (!img) {
@@ -114,7 +164,7 @@ async function _renderRawFrame(
       if (img) {
         const objectFit = node.style.objectFit || "fill";
         if (objectFit === "fill") {
-          ctx.drawImage(img, 0, 0, layout.width, layout.height);
+          currentCtx.drawImage(img, 0, 0, layout.width, layout.height);
         } else if (objectFit === "contain" || objectFit === "cover") {
           const imgRatio = img.width / img.height;
           const containerRatio = layout.width / layout.height;
@@ -138,52 +188,73 @@ async function _renderRawFrame(
           }
           dx = (layout.width - dw) / 2;
           dy = (layout.height - dh) / 2;
-          ctx.drawImage(img, dx, dy, dw, dh);
+          currentCtx.drawImage(img, dx, dy, dw, dh);
         }
       }
     } else if (node.tag === "video" && node.src) {
       const videoFrame = await videoManager.getFrame(node.src, Math.floor(frame));
       if (videoFrame) {
-        // Draw raw RGBA pixels to offscreen canvas, then draw that to main context to respect transforms
-        const offscreen = new Canvas(config.width, config.height);
-        const offCtx = offscreen.getContext("2d");
-        const imgData = offCtx.createImageData(config.width, config.height);
+        const offscreenV = new Canvas(config.width, config.height);
+        const offCtxV = offscreenV.getContext("2d");
+        const imgData = offCtxV.createImageData(config.width, config.height);
         imgData.data.set(videoFrame);
-        offCtx.putImageData(imgData, 0, 0);
-        ctx.drawImage(offscreen, 0, 0, layout.width, layout.height);
+        offCtxV.putImageData(imgData, 0, 0);
+        currentCtx.drawImage(offscreenV, 0, 0, layout.width, layout.height);
       }
     } else if (node.tag === "path" && node.d) {
       const p = new Path2D(node.d);
-
       if (node.style.fill) {
-        ctx.fillStyle = node.style.fill;
-        ctx.fill(p);
+        currentCtx.fillStyle = node.style.fill;
+        currentCtx.fill(p);
       }
-
       if (node.style.stroke) {
-        ctx.strokeStyle = node.style.stroke;
-        ctx.lineWidth = node.style.strokeWidth || 1;
-
-        if (node.style.strokeLineCap) ctx.lineCap = node.style.strokeLineCap;
-        if (node.style.strokeLineJoin) ctx.lineJoin = node.style.strokeLineJoin;
-        if (node.style.strokeDashArray) ctx.setLineDash(node.style.strokeDashArray);
-        if (node.style.strokeDashOffset) ctx.lineDashOffset = node.style.strokeDashOffset;
-
-        ctx.stroke(p);
+        currentCtx.strokeStyle = node.style.stroke;
+        currentCtx.lineWidth = node.style.strokeWidth || 1;
+        if (node.style.strokeLineCap) currentCtx.lineCap = node.style.strokeLineCap;
+        if (node.style.strokeLineJoin) currentCtx.lineJoin = node.style.strokeLineJoin;
+        if (node.style.strokeDashArray) currentCtx.setLineDash(node.style.strokeDashArray);
+        if (node.style.strokeDashOffset) currentCtx.lineDashOffset = node.style.strokeDashOffset;
+        currentCtx.stroke(p);
       }
     }
 
-    // Process Children
+    // Process Children (sorted by zIndex)
     if (node.children) {
-      for (let i = 0; i < node.children.length; i++) {
-        await drawNode(node.children[i], yogaNode.getChild(i));
+      const indexedChildren = node.children.map((child, i) => ({ child, originalIndex: i }));
+      const sortedChildren = indexedChildren.sort((a, b) => {
+        const zA = a.child.style.zIndex || 0;
+        const zB = b.child.style.zIndex || 0;
+        return zA - zB;
+      });
+
+      for (const { child, originalIndex } of sortedChildren) {
+        await drawNode(child, yogaNode.getChild(originalIndex), currentCtx);
       }
     }
 
-    ctx.restore();
+    // Finish Masking
+    if (node.mask && offscreen) {
+      const maskCanvas = new Canvas(layout.width, layout.height);
+      const maskCtx = maskCanvas.getContext("2d");
+      const maskLayoutRoot = calculateLayout(node.mask, layout.width, layout.height);
+      await drawNode(node.mask, maskLayoutRoot, maskCtx);
+
+      const maskMode = node.style.maskMode || "alpha";
+      if (maskMode === "alpha" || maskMode === "alphaInverted") {
+        currentCtx.globalCompositeOperation = maskMode === "alpha" ? "destination-in" : "destination-out";
+        currentCtx.drawImage(maskCanvas, 0, 0);
+      } else if (maskMode === "luminance" || maskMode === "luminanceInverted") {
+        currentCtx.globalCompositeOperation = "destination-in";
+        currentCtx.drawImage(maskCanvas, 0, 0);
+      }
+
+      targetCtx.drawImage(offscreen, 0, 0);
+    }
+
+    targetCtx.restore();
   }
 
-  await drawNode(scene, layoutRoot);
+  await drawNode(scene, layoutRoot, ctx);
   return canvas.toBuffer("raw");
 }
 

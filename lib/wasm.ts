@@ -2,24 +2,18 @@ import init, { AmethystEngine } from "../core/pkg/amethyst_core.js";
 import { readFile } from "fs/promises";
 import { join } from "path";
 import type { RenderConfig } from "./types.js";
+import type { HardwareReport } from "./cli.ts";
 
 let engineInstance: any = null;
 let wasmInitialized = false;
+let hardwareInfo: HardwareReport | null = null;
 
-/**
- * Initializes the Wasm core and loads assets.
- * Updated to use the non-deprecated single-object initialization.
- */
 export async function getEngine(config: RenderConfig) {
   if (!wasmInitialized) {
     try {
       const wasmPath = join(import.meta.dir, "../core/pkg/amethyst_core_bg.wasm");
       const wasmBuffer = await readFile(wasmPath);
-      
-      // Fix: Use the single-object parameter to avoid deprecation warnings
-      // which mangle the terminal progress bar.
       await init({ module_or_path: wasmBuffer });
-      
       wasmInitialized = true;
     } catch (e) {
       console.error("❌ Failed to initialize Wasm:", e);
@@ -29,8 +23,8 @@ export async function getEngine(config: RenderConfig) {
 
   if (!engineInstance) {
     engineInstance = AmethystEngine.new();
+    hardwareInfo = JSON.parse(engineInstance.get_hardware_info());
     
-    // Load Fonts
     if (config.fonts) {
       for (const [name, path] of Object.entries(config.fonts)) {
         const buffer = await readFile(path);
@@ -38,7 +32,6 @@ export async function getEngine(config: RenderConfig) {
       }
     }
     
-    // Load Static Assets
     if (config.assets) {
       for (const [id, path] of Object.entries(config.assets)) {
         const buffer = await readFile(path);
@@ -47,6 +40,10 @@ export async function getEngine(config: RenderConfig) {
     }
   }
   return engineInstance;
+}
+
+export function getHardwareReport(): HardwareReport {
+  return hardwareInfo || { mode: "cpu", device: "Unknown" };
 }
 
 export function getRawEngine() {

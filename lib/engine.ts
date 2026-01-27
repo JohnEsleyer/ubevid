@@ -1,20 +1,18 @@
 import { spawn } from "bun";
 import os from "node:os";
 import pc from "picocolors";
-import cliProgress from "cli-progress";
-import { getRawEngine } from "./wasm.js";
-import { renderSingleFrame } from "./renderer.js";
+import { getEngine, getHardwareReport, getRawEngine } from "./wasm.js";
+import { printAmethystHeader, createProgressBar } from "./cli.js";
 import type { RenderConfig, SceneNode } from "./types.js";
 
+// Re-exports for external use
 export * from "./hooks.js";
 export { startPreview } from "./server.js";
-export { renderSingleFrame };
+export { renderSingleFrame } from "./renderer.js";
 
-export function measurePath(d: string): number {
-  const engine = getRawEngine();
-  return engine ? engine.measure_path(d) : 0;
-}
-
+/**
+ * Main parallel render function
+ */
 export async function render<T>(
   sceneComponent: (props: T) => SceneNode,
   config: RenderConfig,
@@ -22,21 +20,23 @@ export async function render<T>(
   props: T = {} as T,
   sketchPath: string 
 ) {
+  if (!sketchPath) {
+    console.error(`\n${pc.red("❌ Error:")} You must provide the path to the sketch file for parallel rendering.`);
+    process.exit(1);
+  }
+
   const { width, height, fps, duration } = config;
   const totalFrames = fps * duration;
   
-  const cpuCount = os.cpus().length || 4;
-  const workerCount = Math.min(cpuCount, 8); 
+  // 1. Initialize Engine & Get Hardware Info
+  await getEngine(config);
+  const hardware = getHardwareReport();
+  
+  // 2. Print crystalline dashboard
+  printAmethystHeader(hardware, sketchPath.split("/").pop() || "unknown", config);
 
-  console.log(`\n${pc.magenta("🟣 amethyst")} ${pc.dim("v0.1.0")}`);
-  console.log(`${pc.cyan("🎬 Rendering:")} ${pc.white(outputFile)} ${pc.dim(`(${width}x${height} @ ${fps}fps)`)}`);
-
-  const progressBar = new cliProgress.SingleBar({
-    format: `${pc.magenta("{bar}")} ${pc.bold("{percentage}%")} | ${pc.dim("{value}/{total} frames")} | ETA: ${pc.cyan("{eta}s")}`,
-    barCompleteChar: "█",
-    barIncompleteChar: "░",
-    hideCursor: true,
-  });
+  const progressBar = createProgressBar();
+  const workerCount = Math.min(os.cpus().length || 4, 8); 
 
   const ffmpegArgs = ["-y", "-f", "rawvideo", "-pix_fmt", "rgba", "-s", `${width}x${height}`, "-r", `${fps}`, "-i", "-"];
   if (config.audio) ffmpegArgs.push("-i", config.audio, "-map", "0:v", "-map", "1:a", "-c:a", "aac", "-shortest");
@@ -55,7 +55,6 @@ export async function render<T>(
   for (let i = 0; i < workerCount; i++) {
     const startFrame = i * chunkSize;
     const endFrame = Math.min(startFrame + chunkSize - 1, totalFrames - 1);
-    
     if (startFrame >= totalFrames) break;
 
     const worker = new Worker(new URL("./worker.js", import.meta.url).href);
@@ -65,7 +64,6 @@ export async function render<T>(
       const data = event.data;
       if (data.type === "frame") {
         frameMap.set(data.frame, new Uint8Array(data.pixels));
-        
         while (frameMap.has(framesWritten)) {
           ffmpeg.stdin.write(frameMap.get(framesWritten)!);
           frameMap.delete(framesWritten);
@@ -83,22 +81,27 @@ export async function render<T>(
     workers.push(worker);
   }
 
-  // Poll for completion to ensure all frames are written
   while (framesWritten < totalFrames) {
     await new Promise(r => setTimeout(r, 50));
   }
 
-  // Slight pause to ensure progress bar draws its 100% state before stopping
   await new Promise(r => setTimeout(r, 100));
   progressBar.stop();
   ffmpeg.stdin.end();
 
   const exitCode = await ffmpeg.exited;
-  
   if (exitCode === 0) {
-    console.log(`${pc.green("✅ Success!")} Saved to ${pc.bold(outputFile)}\n`);
+    console.log(`\n${pc.green("✅ Success!")} Saved to ${pc.bold(outputFile)}\n`);
   } else {
     const errorOutput = await new Response(ffmpeg.stderr).text();
-    console.error(`${pc.red("❌ FFmpeg Error (Code " + exitCode + "):")}\n${errorOutput}`);
+    console.error(`\n${pc.red("❌ FFmpeg Error:")}\n${errorOutput}`);
   }
+}
+
+/**
+ * Native utility to measure SVG path lengths
+ */
+export function measurePath(d: string): number {
+  const engine = getRawEngine();
+  return engine ? engine.measure_path(d) : 0;
 }

@@ -1,24 +1,17 @@
-
 mod types;
 mod utils;
 mod text;
 mod filters;
 mod engine;
 mod layout;
-mod render; // Now a directory module
+mod render;
 
 use wasm_bindgen::prelude::*;
 use taffy::prelude::*;
 use tiny_skia::Pixmap;
 use crate::engine::EngineCore;
-use crate::types::SceneNode;
+use crate::types::{SceneNode, HardwareInfo};
 use crate::utils::calculate_path_length;
-
-#[wasm_bindgen]
-extern "C" {
-    #[wasm_bindgen(js_namespace = console)]
-    fn log(s: &str);
-}
 
 #[wasm_bindgen]
 pub struct AmethystEngine {
@@ -43,6 +36,15 @@ impl AmethystEngine {
         self.core.load_asset_raw(id, data, width, height).map_err(|e| JsValue::from_str(e.as_str()))
     }
 
+    pub fn get_hardware_info(&self) -> JsValue {
+        // Currently defaulting to CPU/TinySkia as we prepare the WGPU backend
+        let info = HardwareInfo {
+            mode: "cpu".to_string(),
+            device: "TinySkia / Software".to_string(),
+        };
+        serde_json::to_string(&info).unwrap().into()
+    }
+
     pub fn render(&self, json_input: &str, width: u32, height: u32) -> Vec<u8> {
         let root_node: SceneNode = serde_json::from_str(json_input).unwrap();
         let mut taffy = Taffy::new();
@@ -54,7 +56,6 @@ impl AmethystEngine {
         }).unwrap();
 
         let mut pixmap = Pixmap::new(width, height).unwrap();
-        // Updated call to new module structure
         render::draw_scene(&taffy, &root_node, root, &mut pixmap, &self.core, 0.0, 0.0, 1.0);
         
         pixmap.data().to_vec()

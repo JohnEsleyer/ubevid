@@ -1,4 +1,4 @@
-import { View, Text } from "../components.js";
+import { View, Text, ComponentProps } from "../components.js";
 import { mapRange } from "../math.js";
 import type { SceneNode, StyleConfig } from "../types.js";
 
@@ -14,7 +14,7 @@ export function BarChart(props: {
     height?: number;
     maxValue: number;
     progress?: number; // 0 to 1 for animation
-    style?: StyleConfig;
+    style?: ComponentProps;
     barStyle?: StyleConfig;
     labelStyle?: StyleConfig;
 }): SceneNode {
@@ -78,7 +78,7 @@ export function LineChart(props: {
     height?: number;
     maxValue: number;
     progress?: number;
-    style?: StyleConfig;
+    style?: ComponentProps;
     lineStyle?: StyleConfig;
 }): SceneNode {
     const {

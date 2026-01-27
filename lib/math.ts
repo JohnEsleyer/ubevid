@@ -3,31 +3,31 @@ import { Noise } from "./noise.js";
 export class Random {
   private seed: number;
   constructor(seed: number = 12345) { this.seed = seed; }
-  
+
   next(): number {
     this.seed = (this.seed * 1664525 + 1013904223) % 4294967296;
     return this.seed / 4294967296;
   }
 
-  range(min: number, max: number) { 
-    return min + this.next() * (max - min); 
+  range(min: number, max: number) {
+    return min + this.next() * (max - min);
   }
 }
 
 let _globalRandom = new Random(12345);
 let _globalNoise = new Noise(12345);
 
-export function setSeed(seed: number) { 
-  _globalRandom = new Random(seed); 
+export function setSeed(seed: number) {
+  _globalRandom = new Random(seed);
   _globalNoise = new Noise(seed);
 }
 
-export function random(): number { 
-  return _globalRandom.next(); 
+export function random(): number {
+  return _globalRandom.next();
 }
 
-export function randomRange(min: number, max: number) { 
-  return _globalRandom.range(min, max); 
+export function randomRange(min: number, max: number) {
+  return _globalRandom.range(min, max);
 }
 
 /**
@@ -56,7 +56,7 @@ export function interpolate(
   const [startVal, endVal] = outputRange;
 
   let t = (frame - startFrame) / (endFrame - startFrame);
-  t = Math.max(0, Math.min(1, t)); 
+  t = Math.max(0, Math.min(1, t));
 
   const easedT = easing(t);
   return startVal + easedT * (endVal - startVal);
@@ -76,5 +76,10 @@ export const Easing = {
   inElastic: (t: number) => {
     const c4 = (2 * Math.PI) / 3;
     return t === 0 ? 0 : t === 1 ? 1 : -Math.pow(2, 10 * t - 10) * Math.sin((t * 10 - 10.75) * c4);
-  }
+  },
+  outElastic: (t: number) => {
+    const c4 = (2 * Math.PI) / 3;
+    return t === 0 ? 0 : t === 1 ? 1 : Math.pow(2, -10 * t) * Math.sin((t * 10 - 0.75) * c4) + 1;
+  },
+  inOutCubic: (t: number) => t < 0.5 ? 4 * t * t * t : 1 - Math.pow(-2 * t + 2, 3) / 2,
 };

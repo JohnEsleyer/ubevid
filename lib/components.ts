@@ -1,42 +1,73 @@
 import type { SceneNode, StyleConfig, GradientConfig } from "./types.js";
 
 /**
+ * Component Props including Style and Node metadata
+ */
+export interface ComponentProps extends StyleConfig {
+    mask?: SceneNode;
+}
+
+/**
  * High-level component API for building scene graphs.
  */
 export const Amethyst = {
-    view: (style: StyleConfig, children?: SceneNode[]): SceneNode => ({
-        tag: "view",
-        style,
-        children
-    }),
+    view: (props: ComponentProps, children?: SceneNode[]): SceneNode => {
+        const { mask, ...style } = props;
+        return {
+            tag: "view",
+            style,
+            mask,
+            children
+        };
+    },
 
-    text: (text: string, style: StyleConfig): SceneNode => ({
-        tag: "text",
-        text,
-        style
-    }),
+    text: (text: string, props: ComponentProps): SceneNode => {
+        const { mask, ...style } = props;
+        return {
+            tag: "text",
+            text,
+            style,
+            mask
+        };
+    },
 
-    image: (src: string, style: StyleConfig): SceneNode => ({
-        tag: "image",
-        src,
-        style
-    }),
+    image: (src: string, props: ComponentProps): SceneNode => {
+        const { mask, ...style } = props;
+        return {
+            tag: "image",
+            src,
+            style,
+            mask
+        };
+    },
 
-    circle: (style: StyleConfig): SceneNode => ({
-        tag: "circle",
-        style
-    }),
+    circle: (props: ComponentProps): SceneNode => {
+        const { mask, ...style } = props;
+        return {
+            tag: "circle",
+            style,
+            mask
+        };
+    },
 
-    rect: (style: StyleConfig): SceneNode => ({
-        tag: "rect",
-        style
-    }),
+    rect: (props: ComponentProps): SceneNode => {
+        const { mask, ...style } = props;
+        return {
+            tag: "rect",
+            style,
+            mask
+        };
+    },
 
-    path: (d: string, style: StyleConfig): SceneNode => ({
-        tag: "path",
-        d,
-        style
-    })
+    path: (d: string, props: ComponentProps): SceneNode => {
+        const { mask, ...style } = props;
+        return {
+            tag: "path",
+            d,
+            style,
+            mask
+        };
+    }
 };
 
 // Aliases for more JSX-like or functional usage

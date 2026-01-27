@@ -1,4 +1,4 @@
-import { View, Text } from "../components.js";
+import { View, Text, ComponentProps } from "../components.js";
 import { State } from "../state.js";
 import type { SceneNode, StyleConfig } from "../types.js";
 
@@ -9,7 +9,7 @@ import type { SceneNode, StyleConfig } from "../types.js";
 export function Typewriter(props: {
     text: string;
     progress: number; // 0 to 1
-    style?: StyleConfig;
+    style?: ComponentProps;
     cursor?: string;
     cursorStyle?: StyleConfig;
 }): SceneNode {
@@ -37,7 +37,7 @@ export function Typewriter(props: {
  */
 export function KineticText(props: {
     text: string;
-    style?: StyleConfig;
+    style?: ComponentProps;
     transform: (index: number, char: string) => StyleConfig;
 }): SceneNode {
     const { text, style = {}, transform } = props;
@@ -70,7 +70,7 @@ export function KineticText(props: {
 export function CodeBlock(props: {
     code: string;
     language?: string;
-    style?: StyleConfig;
+    style?: ComponentProps;
 }): SceneNode {
     const { code, style = {} } = props;
     const lines = code.split("\n");

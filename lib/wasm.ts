@@ -10,20 +10,17 @@ let hardwareInfo: HardwareReport | null = null;
 
 export async function getEngine(config: RenderConfig) {
   if (!wasmInitialized) {
-    try {
-      const wasmPath = join(import.meta.dir, "../core/pkg/amethyst_core_bg.wasm");
-      const wasmBuffer = await readFile(wasmPath);
-      await init({ module_or_path: wasmBuffer });
-      wasmInitialized = true;
-    } catch (e) {
-      console.error("❌ Failed to initialize Wasm:", e);
-      throw e;
-    }
+    const wasmPath = join(import.meta.dir, "../core/pkg/amethyst_core_bg.wasm");
+    const wasmBuffer = await readFile(wasmPath);
+    await init({ module_or_path: wasmBuffer });
+    wasmInitialized = true;
   }
 
   if (!engineInstance) {
     engineInstance = AmethystEngine.new();
-    hardwareInfo = JSON.parse(engineInstance.get_hardware_info());
+    
+    const rawInfo = await engineInstance.get_hardware_info();
+    hardwareInfo = JSON.parse(rawInfo);
     
     if (config.fonts) {
       for (const [name, path] of Object.entries(config.fonts)) {
@@ -31,21 +28,14 @@ export async function getEngine(config: RenderConfig) {
         engineInstance.load_font(name, new Uint8Array(buffer));
       }
     }
-    
-    if (config.assets) {
-      for (const [id, path] of Object.entries(config.assets)) {
-        const buffer = await readFile(path);
-        engineInstance.load_asset(id, new Uint8Array(buffer));
-      }
-    }
   }
   return engineInstance;
 }
 
-export function getHardwareReport(): HardwareReport {
-  return hardwareInfo || { mode: "cpu", device: "Unknown" };
-}
-
 export function getRawEngine() {
   return engineInstance;
+}
+
+export function getHardwareReport(): HardwareReport {
+  return hardwareInfo || { mode: "cpu", device: "Detecting..." };
 }

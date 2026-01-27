@@ -13,6 +13,8 @@ export { startPreview } from "./server.js";
 export { renderSingleFrame } from "./renderer.js";
 export * from "./components.js";
 export * from "./math.js";
+export * from "./stdlib/typography.js";
+export * from "./stdlib/charts.js"; // Export charts
 
 import { spawn } from "bun";
 import os from "node:os";

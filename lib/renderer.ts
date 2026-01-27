@@ -1,4 +1,4 @@
-import { Canvas, Image, loadImage, FontLibrary } from "skia-canvas";
+import { Canvas, Image, loadImage, FontLibrary, Path2D } from "skia-canvas";
 import { calculateLayout } from "./layout.js";
 import type { SceneNode, RenderConfig } from "./types.js";
 import { State } from "./state.js";
@@ -92,7 +92,8 @@ async function _renderRawFrame(
       ctx.fillStyle = node.style.color || "#ffffff";
       const fontSize = node.style.fontSize || 30;
       const fontFamily = node.style.fontFamily || "sans-serif";
-      ctx.font = `${fontSize}px "${fontFamily}"`;
+      const fontWeight = node.style.fontWeight || "";
+      ctx.font = `${fontWeight} ${fontSize}px "${fontFamily}"`.trim();
 
       const textMetrics = ctx.measureText(node.text);
       let tx = 0;
@@ -150,6 +151,25 @@ async function _renderRawFrame(
         imgData.data.set(videoFrame);
         offCtx.putImageData(imgData, 0, 0);
         ctx.drawImage(offscreen, 0, 0, layout.width, layout.height);
+      }
+    } else if (node.tag === "path" && node.d) {
+      const p = new Path2D(node.d);
+
+      if (node.style.fill) {
+        ctx.fillStyle = node.style.fill;
+        ctx.fill(p);
+      }
+
+      if (node.style.stroke) {
+        ctx.strokeStyle = node.style.stroke;
+        ctx.lineWidth = node.style.strokeWidth || 1;
+
+        if (node.style.strokeLineCap) ctx.lineCap = node.style.strokeLineCap;
+        if (node.style.strokeLineJoin) ctx.lineJoin = node.style.strokeLineJoin;
+        if (node.style.strokeDashArray) ctx.setLineDash(node.style.strokeDashArray);
+        if (node.style.strokeDashOffset) ctx.lineDashOffset = node.style.strokeDashOffset;
+
+        ctx.stroke(p);
       }
     }
 

@@ -56,6 +56,9 @@ export interface StyleConfig {
   borderBottomRightRadius?: number;
   borderColor?: string;
   borderWidth?: number;
+  fill?: string;
+  stroke?: string;
+  strokeWidth?: number;
   opacity?: number;
   overflow?: "visible" | "hidden";
 
@@ -90,6 +93,7 @@ export interface StyleConfig {
   color?: string;
   fontSize?: number;
   fontFamily?: string;
+  fontWeight?: string | number;
   textAlign?: "left" | "center" | "right";
   lineHeight?: number;
   letterSpacing?: number;

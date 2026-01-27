@@ -22,10 +22,27 @@ export async function getEngine(config: RenderConfig) {
     const rawInfo = await engineInstance.get_hardware_info();
     hardwareInfo = JSON.parse(rawInfo);
     
+    // Load Fonts
     if (config.fonts) {
       for (const [name, path] of Object.entries(config.fonts)) {
-        const buffer = await readFile(path);
-        engineInstance.load_font(name, new Uint8Array(buffer));
+        try {
+          const buffer = await readFile(path);
+          engineInstance.load_font(name, new Uint8Array(buffer));
+        } catch (e) {
+          console.warn(`⚠️ Failed to load font '${name}':`, e);
+        }
+      }
+    }
+
+    // Load Image Assets
+    if (config.assets) {
+      for (const [name, path] of Object.entries(config.assets)) {
+        try {
+          const buffer = await readFile(path);
+          engineInstance.load_asset(name, new Uint8Array(buffer));
+        } catch (e) {
+          console.warn(`⚠️ Failed to load asset '${name}':`, e);
+        }
       }
     }
   }

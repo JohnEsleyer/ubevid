@@ -5,27 +5,32 @@ export interface GradientConfig {
   angle?: number;
 }
 
+/**
+ * Dimensions can be a number (pixels/points) or a string (e.g., "100%", "50%").
+ */
+export type FlexDimension = number | string;
+
 export interface StyleConfig {
   // Layout
-  width?: number;
-  height?: number;
+  width?: FlexDimension;
+  height?: FlexDimension;
   aspectRatio?: number;
   flex?: number;
   flexDirection?: "row" | "column";
   justifyContent?: "center" | "spaceBetween" | "flexStart" | "flexEnd";
   alignItems?: "center" | "flexStart" | "flexEnd";
-  margin?: number;
-  marginTop?: number;
-  marginBottom?: number;
-  marginLeft?: number;
-  marginRight?: number;
-  padding?: number;
+  margin?: FlexDimension;
+  marginTop?: FlexDimension;
+  marginBottom?: FlexDimension;
+  marginLeft?: FlexDimension;
+  marginRight?: FlexDimension;
+  padding?: FlexDimension;
   
   position?: "relative" | "absolute";
-  top?: number;
-  left?: number;
-  right?: number;
-  bottom?: number;
+  top?: FlexDimension;
+  left?: FlexDimension;
+  right?: FlexDimension;
+  bottom?: FlexDimension;
   zIndex?: number;
   
   // Visuals

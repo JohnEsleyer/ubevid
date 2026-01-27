@@ -5,8 +5,41 @@ use std::sync::Arc;
 use fontdue::Font;
 use tiny_skia::Pixmap;
 
-use crate::types::SceneNode;
+use crate::types::{SceneNode, DimensionProp};
 use crate::text::compute_text_lines;
+
+fn parse_dimension(prop: &Option<DimensionProp>) -> Dimension {
+    match prop {
+        Some(DimensionProp::Points(px)) => Dimension::Points(*px),
+        Some(DimensionProp::Percent(pct)) => {
+            let val = pct.trim_end_matches('%').parse::<f32>().unwrap_or(0.0);
+            Dimension::Percent(val / 100.0)
+        }
+        None => Dimension::Auto,
+    }
+}
+
+fn parse_length_auto(prop: &Option<DimensionProp>) -> LengthPercentageAuto {
+    match prop {
+        Some(DimensionProp::Points(px)) => LengthPercentageAuto::Points(*px),
+        Some(DimensionProp::Percent(pct)) => {
+            let val = pct.trim_end_matches('%').parse::<f32>().unwrap_or(0.0);
+            LengthPercentageAuto::Percent(val / 100.0)
+        }
+        None => LengthPercentageAuto::Auto,
+    }
+}
+
+fn parse_length(prop: &Option<DimensionProp>) -> LengthPercentage {
+    match prop {
+        Some(DimensionProp::Points(px)) => LengthPercentage::Points(*px),
+        Some(DimensionProp::Percent(pct)) => {
+            let val = pct.trim_end_matches('%').parse::<f32>().unwrap_or(0.0);
+            LengthPercentage::Percent(val / 100.0)
+        }
+        None => LengthPercentage::Points(0.0),
+    }
+}
 
 pub fn build_taffy(
     taffy: &mut Taffy, 
@@ -14,8 +47,8 @@ pub fn build_taffy(
     assets: &HashMap<String, Pixmap>, 
     fonts: &HashMap<String, Arc<Font>>
 ) -> Node {
-    let mut w = node.style.width.map(Dimension::Points).unwrap_or(Dimension::Auto);
-    let mut h = node.style.height.map(Dimension::Points).unwrap_or(Dimension::Auto);
+    let mut w = parse_dimension(&node.style.width);
+    let mut h = parse_dimension(&node.style.height);
 
     if node.tag == "image" {
         if let Some(src) = &node.src {
@@ -35,22 +68,22 @@ pub fn build_taffy(
         justify_content: Some(match node.style.justify_content.as_deref() { Some("center") => JustifyContent::Center, Some("spaceBetween") => JustifyContent::SpaceBetween, Some("flexEnd") => JustifyContent::FlexEnd, _ => JustifyContent::FlexStart }),
         align_items: Some(match node.style.align_items.as_deref() { Some("center") => AlignItems::Center, Some("flexEnd") => AlignItems::FlexEnd, _ => AlignItems::FlexStart }),
         padding: Rect {
-            left: LengthPercentage::Points(node.style.padding.unwrap_or(0.0)),
-            right: LengthPercentage::Points(node.style.padding.unwrap_or(0.0)),
-            top: LengthPercentage::Points(node.style.padding.unwrap_or(0.0)),
-            bottom: LengthPercentage::Points(node.style.padding.unwrap_or(0.0)),
+            left: parse_length(&node.style.padding),
+            right: parse_length(&node.style.padding),
+            top: parse_length(&node.style.padding),
+            bottom: parse_length(&node.style.padding),
         },
         margin: Rect {
-            left: LengthPercentageAuto::Points(node.style.margin_left.or(node.style.margin).unwrap_or(0.0)),
-            right: LengthPercentageAuto::Points(node.style.margin_right.or(node.style.margin).unwrap_or(0.0)),
-            top: LengthPercentageAuto::Points(node.style.margin_top.or(node.style.margin).unwrap_or(0.0)),
-            bottom: LengthPercentageAuto::Points(node.style.margin_bottom.or(node.style.margin).unwrap_or(0.0)),
+            left: parse_length_auto(&node.style.margin_left.clone().or(node.style.margin.clone())),
+            right: parse_length_auto(&node.style.margin_right.clone().or(node.style.margin.clone())),
+            top: parse_length_auto(&node.style.margin_top.clone().or(node.style.margin.clone())),
+            bottom: parse_length_auto(&node.style.margin_bottom.clone().or(node.style.margin.clone())),
         },
         inset: Rect {
-            left: node.style.left.map(LengthPercentageAuto::Points).unwrap_or(LengthPercentageAuto::Auto),
-            right: node.style.right.map(LengthPercentageAuto::Points).unwrap_or(LengthPercentageAuto::Auto),
-            top: node.style.top.map(LengthPercentageAuto::Points).unwrap_or(LengthPercentageAuto::Auto),
-            bottom: node.style.bottom.map(LengthPercentageAuto::Points).unwrap_or(LengthPercentageAuto::Auto),
+            left: parse_length_auto(&node.style.left),
+            right: parse_length_auto(&node.style.right),
+            top: parse_length_auto(&node.style.top),
+            bottom: parse_length_auto(&node.style.bottom),
         },
         ..Default::default()
     };

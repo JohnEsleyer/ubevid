@@ -1,6 +1,13 @@
 use serde::{Deserialize, Serialize};
 
 #[derive(Deserialize, Serialize, Debug, Clone)]
+#[serde(untagged)]
+pub enum DimensionProp {
+    Points(f32),
+    Percent(String),
+}
+
+#[derive(Deserialize, Serialize, Debug, Clone)]
 #[serde(rename_all = "camelCase")]
 pub struct HardwareInfo {
     pub mode: String,
@@ -19,24 +26,24 @@ pub struct GradientConfig {
 #[derive(Deserialize, Serialize, Debug, Default, Clone)]
 #[serde(rename_all = "camelCase")]
 pub struct StyleConfig {
-    pub width: Option<f32>,
-    pub height: Option<f32>,
+    pub width: Option<DimensionProp>,
+    pub height: Option<DimensionProp>,
     pub aspect_ratio: Option<f32>,
     pub flex: Option<f32>,
     pub flex_direction: Option<String>, 
     pub justify_content: Option<String>,
     pub align_items: Option<String>,
-    pub margin: Option<f32>,
-    pub margin_top: Option<f32>,
-    pub margin_bottom: Option<f32>,
-    pub margin_left: Option<f32>,
-    pub margin_right: Option<f32>,
-    pub padding: Option<f32>,
+    pub margin: Option<DimensionProp>,
+    pub margin_top: Option<DimensionProp>,
+    pub margin_bottom: Option<DimensionProp>,
+    pub margin_left: Option<DimensionProp>,
+    pub margin_right: Option<DimensionProp>,
+    pub padding: Option<DimensionProp>,
     pub position: Option<String>,
-    pub top: Option<f32>,
-    pub left: Option<f32>,
-    pub right: Option<f32>,
-    pub bottom: Option<f32>,
+    pub top: Option<DimensionProp>,
+    pub left: Option<DimensionProp>,
+    pub right: Option<DimensionProp>,
+    pub bottom: Option<DimensionProp>,
     pub z_index: Option<i32>,
     pub overflow: Option<String>,
     pub background_color: Option<String>,

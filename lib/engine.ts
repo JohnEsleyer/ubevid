@@ -5,14 +5,11 @@ import { getEngine, getHardwareReport, getRawEngine } from "./wasm.js";
 import { printAmethystHeader, createProgressBar } from "./cli.js";
 import type { RenderConfig, SceneNode } from "./types.js";
 
-// Re-exports for external use
 export * from "./hooks.js";
+export { Sequence } from "./sequence.js";
 export { startPreview } from "./server.js";
 export { renderSingleFrame } from "./renderer.js";
 
-/**
- * Main parallel render function
- */
 export async function render<T>(
   sceneComponent: (props: T) => SceneNode,
   config: RenderConfig,
@@ -21,18 +18,16 @@ export async function render<T>(
   sketchPath: string 
 ) {
   if (!sketchPath) {
-    console.error(`\n${pc.red("❌ Error:")} You must provide the path to the sketch file for parallel rendering.`);
+    console.error(`\n${pc.red("❌ Error:")} Provide sketch file path for parallel rendering.`);
     process.exit(1);
   }
 
   const { width, height, fps, duration } = config;
   const totalFrames = fps * duration;
   
-  // 1. Initialize Engine & Get Hardware Info
   await getEngine(config);
   const hardware = getHardwareReport();
   
-  // 2. Print crystalline dashboard
   printAmethystHeader(hardware, sketchPath.split("/").pop() || "unknown", config);
 
   const progressBar = createProgressBar();
@@ -42,8 +37,19 @@ export async function render<T>(
   if (config.audio) ffmpegArgs.push("-i", config.audio, "-map", "0:v", "-map", "1:a", "-c:a", "aac", "-shortest");
   ffmpegArgs.push("-c:v", "libx264", "-preset", "ultrafast", "-pix_fmt", "yuv420p", outputFile);
 
+  // Spawn FFmpeg
   const ffmpeg = spawn(["ffmpeg", ...ffmpegArgs], { stdin: "pipe", stderr: "pipe" });
   
+  // Prevent stderr buffer from filling up and hanging the process
+  const errorChunks: Uint8Array[] = [];
+  async function readStderr() {
+    // @ts-ignore
+    for await (const chunk of ffmpeg.stderr) {
+      errorChunks.push(chunk);
+    }
+  }
+  const stderrPromise = readStderr();
+
   const frameMap = new Map<number, Uint8Array>();
   let framesWritten = 0;
 
@@ -65,7 +71,12 @@ export async function render<T>(
       if (data.type === "frame") {
         frameMap.set(data.frame, new Uint8Array(data.pixels));
         while (frameMap.has(framesWritten)) {
-          ffmpeg.stdin.write(frameMap.get(framesWritten)!);
+          const pixels = frameMap.get(framesWritten)!;
+          try {
+             ffmpeg.stdin.write(pixels);
+          } catch (e: any) {
+             if (e.code !== "EPIPE") console.error("Write error:", e);
+          }
           frameMap.delete(framesWritten);
           framesWritten++;
           progressBar.update(framesWritten);
@@ -85,22 +96,28 @@ export async function render<T>(
     await new Promise(r => setTimeout(r, 50));
   }
 
+  // Allow a small buffer time for I/O flush
   await new Promise(r => setTimeout(r, 100));
   progressBar.stop();
-  ffmpeg.stdin.end();
+  
+  try {
+    ffmpeg.stdin.end();
+  } catch (e: any) {
+    if (e.code !== "EPIPE") console.error("Pipe close error:", e);
+  }
 
   const exitCode = await ffmpeg.exited;
+  await stderrPromise; // Ensure we finished reading stderr
+
   if (exitCode === 0) {
     console.log(`\n${pc.green("✅ Success!")} Saved to ${pc.bold(outputFile)}\n`);
   } else {
-    const errorOutput = await new Response(ffmpeg.stderr).text();
+    const decoder = new TextDecoder();
+    const errorOutput = errorChunks.map(c => decoder.decode(c)).join("");
     console.error(`\n${pc.red("❌ FFmpeg Error:")}\n${errorOutput}`);
   }
 }
 
-/**
- * Native utility to measure SVG path lengths
- */
 export function measurePath(d: string): number {
   const engine = getRawEngine();
   return engine ? engine.measure_path(d) : 0;

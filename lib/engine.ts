@@ -1,21 +1,28 @@
-import { spawn } from "bun";
-import os from "node:os";
 import pc from "picocolors";
-import { getEngine, getHardwareReport, getRawEngine } from "./wasm.js";
+import process from "node:process";
+
 import { printAmethystHeader, createProgressBar } from "./cli.js";
 import type { RenderConfig, SceneNode } from "./types.js";
+import { VideoManager } from "./video.js";
+
+const videoManager = new VideoManager();
 
 export * from "./hooks.js";
 export { Sequence } from "./sequence.js";
 export { startPreview } from "./server.js";
 export { renderSingleFrame } from "./renderer.js";
+export * from "./components.js";
+export * from "./math.js";
+
+import { spawn } from "bun";
+import os from "node:os";
 
 export async function render<T>(
   sceneComponent: (props: T) => SceneNode,
   config: RenderConfig,
   outputFile: string,
   props: T = {} as T,
-  sketchPath: string 
+  sketchPath: string
 ) {
   if (!sketchPath) {
     console.error(`\n${pc.red("❌ Error:")} Provide sketch file path for parallel rendering.`);
@@ -24,14 +31,20 @@ export async function render<T>(
 
   const { width, height, fps, duration } = config;
   const totalFrames = fps * duration;
-  
-  await getEngine(config);
-  const hardware = getHardwareReport();
-  
+
+  // Pre-process videos
+  if (config.videos) {
+    for (const [id, path] of Object.entries(config.videos)) {
+      await videoManager.load(id, path, fps, width, height);
+    }
+  }
+
+  const hardware = { mode: "cpu" as const, device: "Skia Native (Software)" };
+
   printAmethystHeader(hardware, sketchPath.split("/").pop() || "unknown", config);
 
   const progressBar = createProgressBar();
-  const workerCount = Math.min(os.cpus().length || 4, 8); 
+  const workerCount = Math.min(os.cpus().length || 4, 8);
 
   const ffmpegArgs = ["-y", "-f", "rawvideo", "-pix_fmt", "rgba", "-s", `${width}x${height}`, "-r", `${fps}`, "-i", "-"];
   if (config.audio) ffmpegArgs.push("-i", config.audio, "-map", "0:v", "-map", "1:a", "-c:a", "aac", "-shortest");
@@ -39,7 +52,7 @@ export async function render<T>(
 
   // Spawn FFmpeg
   const ffmpeg = spawn(["ffmpeg", ...ffmpegArgs], { stdin: "pipe", stderr: "pipe" });
-  
+
   // Prevent stderr buffer from filling up and hanging the process
   const errorChunks: Uint8Array[] = [];
   async function readStderr() {
@@ -65,7 +78,7 @@ export async function render<T>(
 
     const worker = new Worker(new URL("./worker.js", import.meta.url).href);
     worker.postMessage({ startFrame, endFrame, config, props, componentPath: sketchPath });
-    
+
     worker.onmessage = (event) => {
       const data = event.data;
       if (data.type === "frame") {
@@ -73,9 +86,9 @@ export async function render<T>(
         while (frameMap.has(framesWritten)) {
           const pixels = frameMap.get(framesWritten)!;
           try {
-             ffmpeg.stdin.write(pixels);
+            ffmpeg.stdin.write(pixels);
           } catch (e: any) {
-             if (e.code !== "EPIPE") console.error("Write error:", e);
+            if (e.code !== "EPIPE") console.error("Write error:", e);
           }
           frameMap.delete(framesWritten);
           framesWritten++;
@@ -99,7 +112,7 @@ export async function render<T>(
   // Allow a small buffer time for I/O flush
   await new Promise(r => setTimeout(r, 100));
   progressBar.stop();
-  
+
   try {
     ffmpeg.stdin.end();
   } catch (e: any) {
@@ -116,9 +129,4 @@ export async function render<T>(
     const errorOutput = errorChunks.map(c => decoder.decode(c)).join("");
     console.error(`\n${pc.red("❌ FFmpeg Error:")}\n${errorOutput}`);
   }
-}
-
-export function measurePath(d: string): number {
-  const engine = getRawEngine();
-  return engine ? engine.measure_path(d) : 0;
 }

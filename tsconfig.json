@@ -1,13 +1,24 @@
 {
   "compilerOptions": {
-    "lib": ["ESNext"],
+    "lib": [
+      "ESNext",
+      "DOM",
+      "WebWorker"
+    ],
     "module": "esnext",
     "target": "esnext",
     "moduleResolution": "bundler",
     "strict": true,
     "allowJs": true,
     "noEmit": true,
-    "skipLibCheck": true
+    "skipLibCheck": true,
+    "types": [
+      "bun",
+      "node"
+    ]
   },
-  "include": ["lib/**/*", "sketches/**/*"]
+  "include": [
+    "lib/**/*",
+    "sketches/**/*"
+  ]
 }

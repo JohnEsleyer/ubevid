@@ -1,35 +1,19 @@
 import { renderSingleFrame } from "./renderer.js";
-import type { RenderConfig } from "./types.js";
 
-declare var self: Worker;
+self.onmessage = async (event) => {
+  const { startFrame, endFrame, config, componentPath } = event.data;
+  const module = await import(componentPath);
+  const sceneComponent = module.default;
 
-/**
- * Worker thread for rendering a chunk of frames.
- */
-self.onmessage = async (event: MessageEvent) => {
-  const { startFrame, endFrame, config, props, componentPath } = event.data;
+  for (let i = startFrame; i <= endFrame; i++) {
+    // Skia-Canvas renders natively on this thread
+    const buffer = await renderSingleFrame(sceneComponent, config, i);
 
-  try {
-    // Dynamically import the user's sketch component
-    const module = await import(componentPath);
-    // Support default or named exports
-    const sceneComponent = module.default || module[Object.keys(module)[0]];
-
-    for (let i = startFrame; i <= endFrame; i++) {
-      const pixels = await renderSingleFrame(sceneComponent, config, i, props);
-      
-      // Transfer the buffer back to the main thread (zero-copy)
-      // Casting pixels.buffer to any solves the ArrayBuffer/Transferable type collision in Bun/TS
-      const buffer = pixels.buffer;
-      self.postMessage({
-        type: "frame",
-        frame: i,
-        pixels: buffer
-      }, [buffer as any]); 
-    }
-
-    self.postMessage({ type: "done" });
-  } catch (e: any) {
-    self.postMessage({ type: "error", error: e.message });
+    self.postMessage({
+      type: "frame",
+      frame: i,
+      pixels: buffer.buffer
+    }, [buffer.buffer as any]);
   }
+  self.postMessage({ type: "done" });
 };

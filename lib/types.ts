@@ -8,7 +8,7 @@ export interface GradientConfig {
 /**
  * Dimensions can be a number (pixels/points) or a string (e.g., "100%", "50%").
  */
-export type FlexDimension = number | string;
+export type FlexDimension = number | string | "auto";
 
 export interface StyleConfig {
   // Layout
@@ -17,22 +17,35 @@ export interface StyleConfig {
   aspectRatio?: number;
   flex?: number;
   flexDirection?: "row" | "column";
-  justifyContent?: "center" | "spaceBetween" | "flexStart" | "flexEnd";
-  alignItems?: "center" | "flexStart" | "flexEnd";
+  justifyContent?: "flex-start" | "center" | "flex-end" | "space-between" | "space-around" | "space-evenly";
+  alignItems?: "flex-start" | "center" | "flex-end" | "stretch" | "baseline";
+  alignSelf?: "auto" | "flex-start" | "center" | "flex-end" | "stretch" | "baseline";
+  flexGrow?: number;
+  flexShrink?: number;
+  flexBasis?: FlexDimension;
+  flexWrap?: "no-wrap" | "wrap" | "wrap-reverse";
+  gap?: number;
+  rowGap?: number;
+  columnGap?: number;
+
   margin?: FlexDimension;
   marginTop?: FlexDimension;
   marginBottom?: FlexDimension;
   marginLeft?: FlexDimension;
   marginRight?: FlexDimension;
   padding?: FlexDimension;
-  
+  paddingTop?: FlexDimension;
+  paddingBottom?: FlexDimension;
+  paddingLeft?: FlexDimension;
+  paddingRight?: FlexDimension;
+
   position?: "relative" | "absolute";
   top?: FlexDimension;
   left?: FlexDimension;
   right?: FlexDimension;
   bottom?: FlexDimension;
   zIndex?: number;
-  
+
   // Visuals
   backgroundColor?: string;
   backgroundGradient?: GradientConfig;
@@ -45,10 +58,10 @@ export interface StyleConfig {
   borderWidth?: number;
   opacity?: number;
   overflow?: "visible" | "hidden";
-  
-  blendMode?: "sourceOver" | "screen" | "multiply" | "overlay" | "darken" | "lighten" | 
-              "colorDodge" | "colorBurn" | "hardLight" | "softLight" | "difference" | "exclusion" | 
-              "hue" | "saturation" | "color" | "luminosity" | "plus" | "xor";
+
+  blendMode?: "sourceOver" | "screen" | "multiply" | "overlay" | "darken" | "lighten" |
+  "colorDodge" | "colorBurn" | "hardLight" | "softLight" | "difference" | "exclusion" |
+  "hue" | "saturation" | "color" | "luminosity" | "plus" | "xor";
 
   maskMode?: "alpha" | "alphaInverted" | "luminance" | "luminanceInverted";
 
@@ -66,7 +79,7 @@ export interface StyleConfig {
   blur?: number;
   invert?: number;
   sepia?: number;
-  
+
   // Shadows
   shadowColor?: string;
   shadowBlur?: number;
@@ -92,13 +105,13 @@ export interface StyleConfig {
 }
 
 export interface SceneNode {
-  tag: "view" | "text" | "image" | "circle" | "rect" | "path" | "ellipse";
+  tag: "view" | "text" | "image" | "video" | "circle" | "rect" | "path" | "ellipse";
   text?: string;
   src?: string;
   d?: string;
   style: StyleConfig;
   children?: SceneNode[];
-  mask?: SceneNode; 
+  mask?: SceneNode;
 }
 
 export interface RenderConfig {
@@ -110,7 +123,7 @@ export interface RenderConfig {
   videos?: Record<string, string>;
   fonts?: Record<string, string>;
   audio?: string;
-  
+
   motionBlurSamples?: number;
   shutterAngle?: number;
 }

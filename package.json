@@ -4,25 +4,24 @@
   "main": "./lib/engine.ts",
   "types": "./lib/types.ts",
   "files": [
-    "lib",
-    "core/pkg"
+    "lib"
   ],
   "type": "module",
   "scripts": {
     "test": "bun test",
-    "build:wasm": "cd core && wasm-pack build --target web",
     "clean": "rm -rf .amethyst/cache_v2 && echo '✨ Cache cleared.'"
   },
   "devDependencies": {
-    "@types/bun": "latest"
+    "@types/bun": "latest",
+    "@types/node": "latest"
   },
   "peerDependencies": {
     "typescript": "^5.0.0"
   },
   "dependencies": {
-    "@types/cli-progress": "^3.11.6",
     "cli-progress": "^3.12.0",
     "picocolors": "^1.1.1",
-    "amethyst": "."
+    "skia-canvas": "3.0.8",
+    "yoga-layout": "^3.2.1"
   }
 }

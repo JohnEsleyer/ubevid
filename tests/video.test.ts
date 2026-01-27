@@ -4,7 +4,7 @@ import { existsSync, rmSync } from "fs";
 import { join } from "path";
 
 describe("VideoManager", () => {
-  const testCache = ".ubevid/test-cache";
+  const testCache = ".amethyst/test-cache";
   const manager = new VideoManager(testCache);
 
   test("calculates correct frame paths", async () => {

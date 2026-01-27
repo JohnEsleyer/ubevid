@@ -45,7 +45,7 @@ function TypographySketch() {
           },
           {
             tag: "text",
-            text: "Ubevid now uses a word-aware wrapping algorithm. It respects spaces and calculates horizontal alignment like center or right-aligned text within its Flexbox container.",
+            text: "amethyst now uses a word-aware wrapping algorithm. It respects spaces and calculates horizontal alignment like center or right-aligned text within its Flexbox container.",
             style: {
               color: "#aaa",
               fontSize: 28,

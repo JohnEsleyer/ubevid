@@ -1,5 +1,5 @@
 [package]
-name = "ubevid_core"
+name = "amethyst_core"
 version = "0.1.0"
 edition = "2021"
 

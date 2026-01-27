@@ -2,7 +2,7 @@ import { describe, expect, test, mock } from "bun:test"; import { renderSingleFr
 
 const mockAsset = new Uint8Array(50 * 50 * 4).fill(255);
 
-mock.module("../lib/wasm.js", () => { return { getEngine: async () => { const { UbeEngine } = await import("../core/pkg/ubevid_core.js"); const engine = UbeEngine.new(); engine.load_asset_raw("whitebox", mockAsset, 50, 50); return engine; }, getRawEngine: () => ({}) }; });
+mock.module("../lib/wasm.js", () => { return { getEngine: async () => { const { AmethystEngine } = await import("../core/pkg/amethyst_core.js"); const engine = AmethystEngine.new(); engine.load_asset_raw("whitebox", mockAsset, 50, 50); return engine; }, getRawEngine: () => ({}) }; });
 
 const RoundedImageScene = (): SceneNode => { return { tag: "image", src: "whitebox", style: { width: 50, height: 50, borderRadius: 25, } }; };
 

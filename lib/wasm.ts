@@ -1,4 +1,4 @@
-import init, { UbeEngine } from "../core/pkg/ubevid_core.js";
+import init, { AmethystEngine } from "../core/pkg/amethyst_core.js";
 import { readFile } from "fs/promises";
 import { join } from "path";
 import type { RenderConfig } from "./types.js";
@@ -13,7 +13,7 @@ let wasmInitialized = false;
 export async function getEngine(config: RenderConfig) {
   if (!wasmInitialized) {
     try {
-      const wasmPath = join(import.meta.dir, "../core/pkg/ubevid_core_bg.wasm");
+      const wasmPath = join(import.meta.dir, "../core/pkg/amethyst_core_bg.wasm");
       const wasmBuffer = await readFile(wasmPath);
       
       // Fix: Use the single-object parameter to avoid deprecation warnings
@@ -28,7 +28,7 @@ export async function getEngine(config: RenderConfig) {
   }
 
   if (!engineInstance) {
-    engineInstance = UbeEngine.new();
+    engineInstance = AmethystEngine.new();
     
     // Load Fonts
     if (config.fonts) {

@@ -4,7 +4,7 @@ export function getPreviewHTML(config: RenderConfig, totalFrames: number): strin
   return `<!DOCTYPE html>
   <html>
   <head>
-      <title>Ubevid Preview</title>
+      <title>amethyst Preview</title>
       <style>
           body { 
               background: #0a0a0a; color: #eee; font-family: system-ui, -apple-system, sans-serif; 
@@ -65,7 +65,7 @@ export function getPreviewHTML(config: RenderConfig, totalFrames: number): strin
       </style>
   </head>
   <body>
-      <h1>UBEVID <span style="font-weight:400; opacity:0.5; font-size: 12px;">PREVIEW</span></h1>
+      <h1>amethyst <span style="font-weight:400; opacity:0.5; font-size: 12px;">PREVIEW</span></h1>
 
       <div class="stage-container">
           <canvas id="stage" width="${config.width}" height="${config.height}"></canvas>

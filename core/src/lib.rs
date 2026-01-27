@@ -21,14 +21,14 @@ extern "C" {
 }
 
 #[wasm_bindgen]
-pub struct UbeEngine {
+pub struct AmethystEngine {
     core: EngineCore
 }
 
 #[wasm_bindgen]
-impl UbeEngine {
-    pub fn new() -> UbeEngine {
-        UbeEngine { core: EngineCore::new() }
+impl AmethystEngine {
+    pub fn new() -> AmethystEngine {
+        AmethystEngine { core: EngineCore::new() }
     }
     
     pub fn load_font(&mut self, name: &str, data: &[u8]) -> Result<(), JsValue> {

@@ -28,7 +28,7 @@ export async function render<T>(
   const cpuCount = os.cpus().length || 4;
   const workerCount = Math.min(cpuCount, 8); 
 
-  console.log(`\n${pc.magenta("🟣 UBEVID")} ${pc.dim("v0.1.0")}`);
+  console.log(`\n${pc.magenta("🟣 amethyst")} ${pc.dim("v0.1.0")}`);
   console.log(`${pc.cyan("🎬 Rendering:")} ${pc.white(outputFile)} ${pc.dim(`(${width}x${height} @ ${fps}fps)`)}`);
 
   const progressBar = new cliProgress.SingleBar({

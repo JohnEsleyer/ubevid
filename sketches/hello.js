@@ -1,42 +1,37 @@
-import { render, useFrame } from "../lib/engine.ts";
+import { render, useFrame } from "../lib/engine.js";
+import path from "path";
 
-const config = {
-  width: 1280,
-  height: 720,
-  fps: 30,
-  duration: 3
+const config = { 
+  width: 1280, height: 720, fps: 30, duration: 5 
 };
 
-function MyVideo() {
+export default function MyVideo() {
   const frame = useFrame();
-  const t = frame / 30; // time in seconds
-
-  const move = Math.sin(t * 3) * 300;
-  const colorVal = Math.floor(Math.abs(Math.sin(t) * 255));
-  const color = `#${colorVal.toString(16).padStart(2,'0')}0088`;
-
+  
   return {
     tag: "view",
     style: {
-      width: 1280,
-      height: 720,
-      backgroundColor: "#111",
-      padding: 50,
-      // Flexbox centering!
-      flex: 1, 
+      width: 1280, height: 720,
+      backgroundColor: "#0a0a0a",
+      justifyContent: "center", alignItems: "center"
     },
     children: [
       {
         tag: "rect",
         style: {
-          width: 200,
-          height: 200,
-          backgroundColor: color,
-          margin: 200 + move // Simple margin animation
+          width: 400, height: 400,
+          backgroundColor: "#8b5cf6",
+          rotate: frame * 2,
+          borderRadius: 40
         }
       }
     ]
   };
 }
 
-await render(MyVideo, config, "output.mp4");
+// Identify the current file for the Worker pool
+const currentFile = path.resolve(import.meta.path);
+
+if (process.argv.includes("--render")) {
+  await render(MyVideo, config, "output.mp4", {}, currentFile);
+}

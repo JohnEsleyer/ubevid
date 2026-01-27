@@ -29,7 +29,7 @@ function TextShowcase() {
     children: [
       {
         tag: "text",
-        text: "UBEVID ENGINE",
+        text: "amethyst ENGINE",
         style: {
           color: "#38bdf8", // Sky Blue
           fontSize: 100,

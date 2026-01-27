@@ -9,7 +9,7 @@ export function startPreview<T>(
 ) {
   const port = 3000;
   
-  console.log(`\n🟣 Ubevid Preview Server`);
+  console.log(`\n🟣 amethyst Preview Server`);
   console.log(`📡 Local: http://localhost:${port}`);
   console.log(`🌐 Remote: Detected automatically via relative paths\n`);
 
@@ -32,7 +32,7 @@ export function startPreview<T>(
           return new Response(file, {
             headers: { 
                 "Content-Type": "video/mp4",
-                "Content-Disposition": `attachment; filename="ubevid-render-${timestamp}.mp4"`,
+                "Content-Disposition": `attachment; filename="amethyst-render-${timestamp}.mp4"`,
                 "Cache-Control": "no-cache"
             },
           });

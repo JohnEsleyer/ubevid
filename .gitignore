@@ -19,7 +19,7 @@ core/pkg/
 *.gif
 
 # --- Video Cache ---
-.ubevid/
+.amethyst/
 
 # --- TypeScript ---
 # Since we use Bun with "noEmit": true, we shouldn't have .js files 

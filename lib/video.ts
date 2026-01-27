@@ -10,7 +10,7 @@ export class VideoManager {
     private cacheDir: string;
     private processed: Set<string> = new Set();
 
-    constructor(cacheDir: string = ".ubevid/cache_v2") {
+    constructor(cacheDir: string = ".amethyst/cache_v2") {
         this.cacheDir = cacheDir;
     }
 

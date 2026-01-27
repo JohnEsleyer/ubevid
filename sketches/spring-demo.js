@@ -6,7 +6,7 @@ const config = {
 };
 
 // We need a persistent state for the spring simulation
-// Since Ubevid is deterministic and purely functional per frame *by default*, 
+// Since amethyst is deterministic and purely functional per frame *by default*, 
 // stateful simulations need a way to pre-calculate or re-calculate.
 // 
 // For this demo, we'll re-run the simulation from frame 0 up to current frame inside the component.

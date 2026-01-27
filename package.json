@@ -1,5 +1,5 @@
 {
-  "name": "@johnesleyer/ubevid",
+  "name": "amethyst",
   "version": "0.1.0",
   "main": "./lib/engine.ts",
   "types": "./lib/types.ts",
@@ -22,6 +22,6 @@
     "@types/cli-progress": "^3.11.6",
     "cli-progress": "^3.12.0",
     "picocolors": "^1.1.1",
-    "ubevid": "."
+    "amethyst": "."
   }
 }

@@ -3,12 +3,12 @@
   "configVersion": 1,
   "workspaces": {
     "": {
-      "name": "ubevid",
+      "name": "amethyst",
       "dependencies": {
         "@types/cli-progress": "^3.11.6",
         "cli-progress": "^3.12.0",
         "picocolors": "^1.1.1",
-        "ubevid": ".",
+        "amethyst": ".",
       },
       "devDependencies": {
         "@types/bun": "latest",
@@ -43,7 +43,7 @@
 
     "typescript": ["typescript@5.9.3", "", { "bin": { "tsc": "bin/tsc", "tsserver": "bin/tsserver" } }, "sha512-jl1vZzPDinLr9eUt3J/t7V6FgNEw9QjvBPdysz9KfQDD41fQrC2Y4vKQdiaUpFT4bXlb1RHhLpp8wtm6M5TgSw=="],
 
-    "ubevid": ["ubevid@root:", {}],
+    "amethyst": ["amethyst@root:", {}],
 
     "undici-types": ["undici-types@7.16.0", "", {}, "sha512-Zz+aZWSj8LE6zoxD+xrjh4VfkIG8Ya6LvYkZqtUQGJPZjYl53ypCaUwWqo7eI0x66KBGeRo+mlBEkMSeSZ38Nw=="],
   }

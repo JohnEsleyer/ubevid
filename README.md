@@ -1,45 +1,70 @@
 # 💎 Amethyst
 
-**The Crystal-Clear Video Orchestration Engine.**
+**The High-Performance Native Video Orchestration Engine.**
 
-Amethyst is a high-performance, deterministic video rendering engine. It replaces the legacy era of browser-based automation (Chromium/Puppeteer) with a **Headless Native Engine** built in Rust and TypeScript.
+Amethyst is a deterministic video rendering engine that brings "Chrome's rendering pipeline without the Chrome process overhead" to the terminal. By replacing browser-based automation with a **Native Core**, Amethyst delivers professional cinematic output with the developer experience of the web.
 
-> *"Render with clarity. Build with precision."*
+> *"Native speed. Web DX. Absolute precision."*
 
 ---
 
-## 🚀 The Vision
+## 🚀 The Native Pivot
 
-Traditional automated video tools are heavy, carry the weight of a full web browser, and are prone to non-deterministic stutters.
-
-**Amethyst is different:**
-- **Native Precision:** Built on Rust (Wasm) and TinySkia. No Chromium required.
-- **Multithreaded Power:** Bun Workers distribute frame rendering across every CPU core.
-- **Absolute Determinism:** Every frame is calculated, not "captured."
-- **Zero-Copy Pipeline:** Optimized video ingestion using raw binary frame caching, bypassing slow image decoding.
+Amethyst has evolved. We've moved beyond Wasm-based rendering to a **Pure Native Pipeline**:
+- **Skia-Canvas:** Powered by Google's Skia C++ library (the same engine driving Chrome and Android).
+- **Yoga Layout:** Powered by Meta's Yoga (the engine behind React Native) for 100% CSS Flexbox fidelity.
+- **Bun Runtime:** Leverages Bun's high-speed workers and native I/O for parallel rendering.
+- **Direct Pipeline:** Zero-copy binary frames piped directly from Skia to FFmpeg via `stdin`.
 
 ---
 
 ## ✨ Key Features
 
-### ⚡ Performance
-- **Threaded Rendering:** Scales automatically to your CPU core count for lightning-fast exports.
-- **Wasm SIMD Acceleration:** Pixel-level operations (filters, blending) are optimized at the instruction level.
-- **Aesthetic CLI:** A beautiful terminal interface with crystalline progress bars and high-fidelity logging.
+### 📐 Professional Layout (Yoga)
+- **CSS Flexbox:** Build video layouts with `flexDirection`, `justifyContent`, `alignItems`, and `gap`.
+- **Responsive Dimensions:** Support for `percentages`, `auto` sizing, and `aspectRatio`.
+- **Absolute Positioning:** Place elements with `top`, `bottom`, `left`, `right`, and `zIndex`.
 
-### 📐 Modern Layout
-- **Flexbox Mastery:** Powered by [Taffy](https://github.com/DioxusLabs/taffy). Build video layouts exactly like you build websites using standard CSS logic.
-- **Intrinsic Text Measurement:** Containers automatically grow and wrap based on your typography.
+### 🎨 High-Fidelity Rendering (Skia)
+- **Typography:** Native font fallback, kerning, ligatures, and emojis via `FontLibrary`.
+- **Visual FX:** Cinematic `blur`, `brightness`, `contrast`, and `grayscale` filters.
+- **Masking & Clipping:** Professional `borderRadius` and `overflow: hidden` support.
+- **Object Fit:** Native `cover`, `contain`, and `fill` modes for images and video.
 
-### 🎨 Professional Graphics
-- **Visual FX Pipeline:** 16+ Blend Modes and real-time filters (Blur, Grayscale, Brightness, Contrast, Saturation, Sepia, Invert).
-- **Masking Engine:** Support for Alpha and Luminance masks with layout-aware positioning.
-- **SVG Path Engine:** High-performance vector rendering with Path Length Measurement for stroke-draw effects.
+### 🎬 Performance & Motion
+- **Multi-threaded:** Automatically scales rendering across every CPU core using Bun Workers.
+- **Cinematic Motion Blur:** Sub-frame accumulation (e.g., 8x, 16x) for smooth, high-end motion.
+- **Deterministic Logic:** Use functional hooks like `useFrame()` and `useKeyframes()` for frame-perfect control.
+- **High-Speed Video:** Pre-processed raw RGBA frame ingestion for stutter-free video overlays.
 
-### 🎬 Motion & Physics
-- **Spring Physics:** Integrated RK4 spring simulation for natural UI animations.
-- **Lottie Ingestion:** Ingest Bodymovin JSON animations directly into the native scene graph.
-- **Temporal Motion Blur:** Cinematic sub-frame accumulation for smooth motion.
+---
+
+## 💻 Developer Experience
+
+Amethyst provides a declarative, functional API that feels like modern web development.
+
+```typescript
+import { View, Text, ImageComp, useFrame, useKeyframes, Easing } from "amethyst";
+
+export default function MySketch() {
+  const frame = useFrame();
+  const opacity = useKeyframes({ 0: 0, 30: 1 });
+  const y = useKeyframes({ 0: 100, 60: 0 }, Easing.outBounce);
+
+  return View({
+    width: "100%", height: "100%",
+    backgroundColor: "#0a0a0c",
+    justifyContent: "center", alignItems: "center"
+  }, [
+    View({
+      padding: 40, backgroundColor: "#1a1a1e",
+      opacity, top: y
+    }, [
+      Text("AMETHYST NATIVE", { fontSize: 48, color: "#a855f7" })
+    ])
+  ]);
+}
+```
 
 ---
 
@@ -48,12 +73,28 @@ Traditional automated video tools are heavy, carry the weight of a full web brow
 ### Prerequisites
 1. **Bun:** `curl -fsSL https://bun.sh/install | bash`
 2. **FFmpeg:** Required for final MP4 encoding.
-3. **Rust:** (If modifying the core) `wasm-pack`.
 
 ### Setup
 ```bash
 # Install dependencies
 bun install
 
-# Build the Wasm core
-bun run build:wasm
+# Run the demo sketch
+bun sketches/run_demo.ts
+```
+
+---
+
+## 🗺️ Roadmap
+- [x] Native Skia-Canvas Core
+- [x] Yoga Flexbox Layout
+- [x] Multi-threaded Parallel Pipelines
+- [x] Cinematic Motion Blur
+- [ ] SVG Path Engine (Native Skia Paths)
+- [ ] Lottie Integration (Skia Skottie)
+- [ ] Real-time Preview Server (HMR)
+
+---
+
+## 📄 License
+MIT © John Esleyer
